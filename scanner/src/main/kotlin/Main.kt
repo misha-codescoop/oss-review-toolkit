@@ -36,6 +36,7 @@ import com.here.ort.utils.PARAMETER_ORDER_LOGGING
 import com.here.ort.utils.PARAMETER_ORDER_MANDATORY
 import com.here.ort.utils.PARAMETER_ORDER_OPTIONAL
 import com.here.ort.utils.collectMessages
+import com.here.ort.utils.getUserConfigDirectory
 import com.here.ort.utils.jsonMapper
 import com.here.ort.utils.log
 import com.here.ort.utils.yamlMapper
@@ -120,8 +121,7 @@ object Main {
     @Parameter(description = "The path to the configuration file.",
             names = ["--config", "-c"],
             order = PARAMETER_ORDER_OPTIONAL)
-    @Suppress("LateinitUsage")
-    private var configFile: File? = null
+    private var configFile = File(getUserConfigDirectory(), "config.yml")
 
     @Parameter(description = "The list of file formats for the summary files.",
             names = ["--summary-format", "-f"],
@@ -191,8 +191,13 @@ object Main {
             }
         }
 
-        if (configFile != null) {
-            ScanResultsCache.configure(yamlMapper.readTree(configFile))
+        if (configFile.isFile) {
+            log.info { "Using configuration file '${configFile.absolutePath}'." }
+
+            val config = yamlMapper.readTree(configFile)
+
+            // Let the individual classes pick their parts from the global config.
+            ScanResultsCache.configure(config)
         }
 
         println("Using scanner '$scanner'.")
