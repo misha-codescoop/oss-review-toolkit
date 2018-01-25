@@ -38,6 +38,7 @@ import com.here.ort.utils.PARAMETER_ORDER_HELP
 import com.here.ort.utils.PARAMETER_ORDER_LOGGING
 import com.here.ort.utils.PARAMETER_ORDER_MANDATORY
 import com.here.ort.utils.PARAMETER_ORDER_OPTIONAL
+import com.here.ort.utils.getUserConfigDirectory
 import com.here.ort.utils.jsonMapper
 import com.here.ort.utils.log
 import com.here.ort.utils.safeMkdirs
@@ -101,6 +102,11 @@ object Main {
             names = ["--allow-dynamic-versions"],
             order = PARAMETER_ORDER_OPTIONAL)
     var allowDynamicVersions = false
+
+    @Parameter(description = "The path to the configuration file.",
+            names = ["--config", "-c"],
+            order = PARAMETER_ORDER_OPTIONAL)
+    private var configFile = File(getUserConfigDirectory(), "config.yml")
 
     @Parameter(description = "A YAML file that contains package curation data.",
             names = ["--package-curations-file"],
@@ -180,6 +186,13 @@ object Main {
             exitProcess(1)
         }
 
+        val config = if (configFile.isFile) {
+            log.info { "Using configuration file '${configFile.absolutePath}'." }
+            yamlMapper.readTree(configFile)
+        } else {
+            null
+        }
+
         println("The following package managers are activated:")
         println("\t" + packageManagers.joinToString(", "))
 
@@ -232,7 +245,8 @@ object Main {
 
         // Resolve dependencies per package manager.
         managedDefinitionFiles.forEach { managerFactory, files ->
-            val manager = managerFactory.create()
+            // Let the individual classes pick their parts from the global config.
+            val manager = managerFactory.create().apply { configure(config) }
             val results = manager.resolveDependencies(absoluteProjectPath, files)
 
             val curatedResults = packageCurationsFile?.let {

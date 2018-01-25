@@ -21,6 +21,8 @@ package com.here.ort.analyzer
 
 import ch.frankel.slf4k.*
 
+import com.fasterxml.jackson.databind.JsonNode
+
 import com.here.ort.analyzer.managers.*
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.AnalyzerResult
@@ -138,6 +140,11 @@ abstract class PackageManager {
      * working directory it needs to be provided.
      */
     abstract fun command(workingDir: File): String
+
+    /**
+     * Configure optional behavior of a package manager.
+     */
+    open fun configure(config: JsonNode?) = Unit
 
     /**
      * Return a tree of resolved dependencies (not necessarily declared dependencies, in case conflicts were resolved)
