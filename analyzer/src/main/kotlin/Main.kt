@@ -90,9 +90,6 @@ object Main {
             order = PARAMETER_ORDER_OPTIONAL)
     private var outputFormat = OutputFormat.YAML
 
-    @Suppress("LateinitUsage")
-    private lateinit var mapper: ObjectMapper
-
     @Parameter(description = "Ignore versions of required tools. NOTE: This may lead to erroneous results.",
             names = ["--ignore-versions"],
             order = PARAMETER_ORDER_OPTIONAL)
@@ -139,7 +136,14 @@ object Main {
                 "-dependencies." + outputFormat.fileEnding)
 
         println("Writing results for\n\t$currentPath\nto\n\t$outputFile")
+
+        val mapper = when (outputFormat) {
+            OutputFormat.JSON -> jsonMapper
+            OutputFormat.YAML -> yamlMapper
+        }
+
         mapper.writerWithDefaultPrettyPrinter().writeValue(outputFile, result)
+
         println("done.")
     }
 
@@ -174,11 +178,6 @@ object Main {
         if (absoluteOutputPath.exists()) {
             log.error { "The output directory '$absoluteOutputPath' must not exist yet." }
             exitProcess(1)
-        }
-
-        mapper = when (outputFormat) {
-            OutputFormat.JSON -> jsonMapper
-            OutputFormat.YAML -> yamlMapper
         }
 
         println("The following package managers are activated:")
