@@ -23,6 +23,7 @@ import ch.frankel.slf4k.*
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.readValue
 
 import com.here.ort.analyzer.Main
 import com.here.ort.analyzer.PackageManager
@@ -44,6 +45,7 @@ import com.here.ort.utils.checkCommandVersion
 import com.here.ort.utils.jsonMapper
 import com.here.ort.utils.log
 import com.here.ort.utils.safeDeleteRecursively
+import com.here.ort.utils.yamlMapper
 
 import com.vdurmont.semver4j.Requirement
 
@@ -111,7 +113,16 @@ class NPM : PackageManager() {
         }
     }
 
+    private val privateScopes = mutableListOf<String>()
+
     override fun command(workingDir: File) = if (File(workingDir, "yarn.lock").isFile) yarn else npm
+
+    override fun configure(config: JsonNode?) {
+        // Return early if there is no NPM configuration.
+        val npmConfig = config?.get(Main.TOOL_NAME)?.get("package_manager")?.get("npm") ?: return
+
+        privateScopes.addAll(npmConfig.get("private_scopes").asIterable().mapNotNull { it.textValue() })
+    }
 
     override fun prepareResolution(definitionFiles: List<File>): List<File> {
         // We do not actually depend on any features specific to an NPM 5.x or Yarn version, but we still want to
