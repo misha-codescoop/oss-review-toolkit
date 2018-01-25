@@ -221,8 +221,8 @@ object Main {
         }
 
         // Print a summary of all projects found per package manager.
-        managedDefinitionFiles.forEach { manager, files ->
-            println("$manager projects found in:")
+        managedDefinitionFiles.forEach { managerFactory, files ->
+            println("$managerFactory projects found in:")
             println(files.joinToString("\n") {
                 "\t${it.toRelativeString(absoluteProjectPath)}"
             })
@@ -231,9 +231,9 @@ object Main {
         val failedAnalysis = sortedSetOf<String>()
 
         // Resolve dependencies per package manager.
-        managedDefinitionFiles.forEach { manager, files ->
-            // Print the list of dependencies.
-            val results = manager.create().resolveDependencies(absoluteProjectPath, files)
+        managedDefinitionFiles.forEach { managerFactory, files ->
+            val manager = managerFactory.create()
+            val results = manager.resolveDependencies(absoluteProjectPath, files)
 
             val curatedResults = packageCurationsFile?.let {
                 val provider = YamlFilePackageCurationProvider(it)
