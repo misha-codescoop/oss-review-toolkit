@@ -49,6 +49,8 @@ typealias ResolutionResult = MutableMap<File, AnalyzerResult>
  */
 abstract class PackageManager {
     companion object {
+        const val HTTP_CACHE_PATH = "${Main.TOOL_NAME}/cache/http"
+
         /**
          * The prioritized list of all available package managers. This needs to be initialized lazily to ensure the
          * referred objects, which derive from this class, exist.
@@ -61,7 +63,7 @@ abstract class PackageManager {
                     NPM,
                     // TODO: CocoaPods,
                     GoDep,
-                    // TODO: Bower,
+                    Bower,
                     PIP
                     // TODO: Bundler
             )
