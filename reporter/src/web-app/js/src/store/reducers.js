@@ -1,5 +1,5 @@
 import { convertToRenderFormat } from '../utils';
-import reportData from '../data/ortResults.json';
+import reportData from '../data/scan-record.json';
 // // Parse JSON report data embedded in HTML page
 // const jsonNode = document.querySelector('script[role="ort-results"]');
 // const jsonText = jsonNode.textContent;
