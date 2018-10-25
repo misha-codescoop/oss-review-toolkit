@@ -45,6 +45,8 @@ import java.io.IOException
 import java.time.Instant
 import java.util.SortedSet
 
+import javax.activation.MimetypesFileTypeMap
+
 const val TOOL_NAME = "downloader"
 const val HTTP_CACHE_PATH = "$TOOL_NAME/cache/http"
 
@@ -234,6 +236,8 @@ class Downloader {
         }
         val revision = workingTree.getRevision()
 
+        filterFilesInDirectory(outputDirectory.absolutePath)
+
         log.info { "Finished downloading source code revision '$revision' to '${outputDirectory.absolutePath}'." }
 
         val vcsInfo = VcsInfo(
@@ -246,6 +250,21 @@ class Downloader {
         return DownloadResult(startTime, outputDirectory, vcsInfo = vcsInfo,
                 originalVcsInfo = target.vcsProcessed.takeIf { it != vcsInfo })
     }
+
+    private fun getMimeType(url: String): String? {
+        val mimeTypesMap = MimetypesFileTypeMap()
+        val mimeType = mimeTypesMap.getContentType(url)
+
+        return mimeType
+    }
+
+    fun filterFilesInDirectory(path: String) {
+
+        File("${path}").walkTopDown().forEach {
+            log.info("${getMimeType(it.toString())}")
+        }
+    }
+
 
     private fun downloadSourceArtifact(target: Package, outputDirectory: File): DownloadResult {
         if (target.sourceArtifact.url.isBlank()) {
