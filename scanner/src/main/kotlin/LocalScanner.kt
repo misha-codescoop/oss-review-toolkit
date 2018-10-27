@@ -134,7 +134,7 @@ abstract class LocalScanner(config: ScannerConfiguration) : Scanner(config), Com
      */
     fun getDetails() = ScannerDetails(getName(), getVersion(), getConfiguration())
 
-    override fun scan(packages: List<Package>, outputDirectory: File, downloadDirectory: File?)
+    override fun scan(packages: List<Package>, outputDirectory: File, downloadDirectory: File?, removeBinaryFiles: Boolean)
             : Map<Package, List<ScanResult>> {
         val scannerDetails = getDetails()
 
@@ -142,7 +142,7 @@ abstract class LocalScanner(config: ScannerConfiguration) : Scanner(config), Com
             val result = try {
                 log.info { "Starting scan of '${pkg.id}' (${index + 1}/${packages.size})." }
 
-                scanPackage(scannerDetails, pkg, outputDirectory, downloadDirectory).map {
+                scanPackage(scannerDetails, pkg, outputDirectory, downloadDirectory, removeBinaryFiles).map {
                     // Remove the now unneeded reference to rawResult here to allow garbage collection to clean it up.
                     it.copy(rawResult = null)
                 }
@@ -229,12 +229,14 @@ abstract class LocalScanner(config: ScannerConfiguration) : Scanner(config), Com
      * @throws ScanException In case the package could not be scanned.
      */
     private fun scanPackage(scannerDetails: ScannerDetails, pkg: Package, outputDirectory: File,
-                    downloadDirectory: File? = null): List<ScanResult> {
+                    downloadDirectory: File? = null, removeBinaryFiles: Boolean): List<ScanResult> {
         val scanResultsDirectory = File(outputDirectory, "scanResults").apply { safeMkdirs() }
         val scanResultsForPackageDirectory = File(scanResultsDirectory, pkg.id.toPath()).apply { safeMkdirs() }
         val resultsFile = File(scanResultsForPackageDirectory, "scan-results_${scannerDetails.name}.$resultFileExt")
 
         val cachedResults = ScanResultsCache.read(pkg, scannerDetails)
+
+        log.info("${removeBinaryFiles}")
 
         if (cachedResults.results.isNotEmpty()) {
             // Some external tools rely on the raw results filer to be written to the scan results directory, so write
@@ -245,7 +247,7 @@ abstract class LocalScanner(config: ScannerConfiguration) : Scanner(config), Com
         }
 
         val downloadResult = try {
-            Downloader().download(pkg, downloadDirectory ?: File(outputDirectory, "downloads"))
+            Downloader().download(pkg, downloadDirectory ?: File(outputDirectory, "downloads"), false, removeBinaryFiles)
         } catch (e: DownloadException) {
             e.showStackTrace()
 

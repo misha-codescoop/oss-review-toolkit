@@ -36,6 +36,7 @@ import com.here.ort.scanner.ScannerFactory
 import com.here.ort.scanner.scanners.ScanCode
 import com.here.ort.utils.PARAMETER_ORDER_MANDATORY
 import com.here.ort.utils.PARAMETER_ORDER_OPTIONAL
+import com.here.ort.utils.log
 
 import java.io.File
 
@@ -96,6 +97,11 @@ object ScannerCommand : CommandWithHelp() {
             order = PARAMETER_ORDER_OPTIONAL)
     private var outputFormats = listOf(OutputFormat.YAML)
 
+    @Parameter(description = "Remove binary files from project",
+                names = ["--remove-binary", "-r"],
+                order = PARAMETER_ORDER_OPTIONAL)
+    private var removeBinaryFiles = false
+
     override fun runCommand(jc: JCommander) {
         require((dependenciesFile == null) != (inputPath == null)) {
             "Either '--ort-file' or '--input-path' must be specified."
@@ -123,12 +129,14 @@ object ScannerCommand : CommandWithHelp() {
             ScanResultsCache.configure(it)
         }
 
+        log.info("REMOVE BINARY FILES: ${removeBinaryFiles}")
+
         val scanner = scannerFactory.create(config)
 
         println("Using scanner '$scanner'.")
 
         val ortResult = dependenciesFile?.let {
-            scanner.scanDependenciesFile(it, outputDir, downloadDir, scopesToScan.toSet())
+            scanner.scanDependenciesFile(it, outputDir, downloadDir, scopesToScan.toSet(), removeBinaryFiles)
         } ?: run {
             // The check is not useless as we do not know what scanners plugins might add.
             @Suppress("USELESS_IS_CHECK")

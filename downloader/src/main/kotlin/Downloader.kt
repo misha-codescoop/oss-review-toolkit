@@ -41,6 +41,8 @@ import okhttp3.Request
 import okio.Okio
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.io.IOException
 import java.time.Instant
 import java.util.SortedSet
@@ -129,7 +131,7 @@ class Downloader {
      *
      * @throws DownloadException In case the download failed.
      */
-    fun download(target: Package, outputDirectory: File, allowMovingRevisions: Boolean = false): DownloadResult {
+    fun download(target: Package, outputDirectory: File, allowMovingRevisions: Boolean = false, removeBinaryFiles: Boolean = false): DownloadResult {
         log.info { "Trying to download source code for '${target.id}'." }
 
         val targetDir = File(outputDirectory, target.id.toPath()).apply { safeMkdirs() }
@@ -155,7 +157,7 @@ class Downloader {
                 }
                 throw DownloadException("No VCS URL provided for '${target.id}'.$details")
             } else {
-                return downloadFromVcs(target, targetDir, allowMovingRevisions)
+                return downloadFromVcs(target, targetDir, allowMovingRevisions, removeBinaryFiles)
             }
         } catch (vcsDownloadException: DownloadException) {
             log.debug { "VCS download failed for '${target.id}': ${vcsDownloadException.message}" }
@@ -176,7 +178,7 @@ class Downloader {
         }
     }
 
-    private fun downloadFromVcs(target: Package, outputDirectory: File, allowMovingRevisions: Boolean): DownloadResult {
+    private fun downloadFromVcs(target: Package, outputDirectory: File, allowMovingRevisions: Boolean, removeBinaryFiles: Boolean): DownloadResult {
         log.info {
             "Trying to download '${target.id}' sources to '${outputDirectory.absolutePath}' from VCS..."
         }
@@ -236,7 +238,9 @@ class Downloader {
         }
         val revision = workingTree.getRevision()
 
-        filterFilesInDirectory(outputDirectory.absolutePath)
+        if (removeBinaryFiles) {
+            filterFilesInDirectory(outputDirectory.absolutePath)
+        }
 
         log.info { "Finished downloading source code revision '$revision' to '${outputDirectory.absolutePath}'." }
 
@@ -251,17 +255,22 @@ class Downloader {
                 originalVcsInfo = target.vcsProcessed.takeIf { it != vcsInfo })
     }
 
-    private fun getMimeType(url: String): String? {
-        val mimeTypesMap = MimetypesFileTypeMap()
-        val mimeType = mimeTypesMap.getContentType(url)
-
-        return mimeType
+    private fun checkType(url: String) {
+        val path = Paths.get(url)
+        val type = Files.probeContentType(path);
+        log.info("path: ${url} \n type: ${type}\n")
+        if (type == "application/octet-stream") {
+            log.info("removing file ${url}")
+            if(File(url).delete()) {
+                log.info("removed file ${url}")
+            }
+        }
     }
 
     fun filterFilesInDirectory(path: String) {
 
         File("${path}").walkTopDown().forEach {
-            log.info("${getMimeType(it.toString())}")
+            checkType(it.toString())
         }
     }
 
