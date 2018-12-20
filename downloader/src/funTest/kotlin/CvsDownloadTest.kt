@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ private const val REPO_VERSION = "0.52"
 private const val REPO_PATH_FOR_VERSION = "xmlenc/build.xml"
 
 class CvsDownloadTest : StringSpec() {
+    private val cvs = Cvs()
     private lateinit var outputDir: File
 
     override fun beforeTest(description: Description) {
@@ -48,38 +49,38 @@ class CvsDownloadTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
-        "CVS can download a given revision".config(enabled = Cvs.isInPath(), tags = setOf(ExpensiveTag)) {
+        "CVS can download a given revision".config(enabled = cvs.isInPath(), tags = setOf(ExpensiveTag)) {
             val pkg = Package.EMPTY.copy(vcsProcessed = VcsInfo("CVS", REPO_URL, REPO_REV))
             val expectedFiles = listOf(
                     "CVS",
                     "xmlenc"
             )
 
-            val workingTree = Cvs.download(pkg, outputDir)
+            val workingTree = cvs.download(pkg, outputDir)
             val actualFiles = workingTree.workingDir.list().sorted()
 
             // Use forward slashes also on Windows as the CVS client comes from MSYS2.
             val buildXmlFile = "xmlenc/build.xml"
-            val buildXmlStatus = Cvs.run(outputDir, "status", buildXmlFile)
+            val buildXmlStatus = cvs.run(outputDir, "status", buildXmlFile)
 
             workingTree.isValid() shouldBe true
             actualFiles.joinToString("\n") shouldBe expectedFiles.joinToString("\n")
 
             // Only tag "RELEASE_0_52" has revision 1.159 of "xmlenc/build.xml".
-            buildXmlStatus.stdout() should contain("Working revision:\t1.159")
+            buildXmlStatus.stdout should contain("Working revision:\t1.159")
         }
 
-        "CVS can download only a single path".config(enabled = Cvs.isInPath(), tags = setOf(ExpensiveTag)) {
+        "CVS can download only a single path".config(enabled = cvs.isInPath(), tags = setOf(ExpensiveTag)) {
             val pkg = Package.EMPTY.copy(vcsProcessed = VcsInfo("CVS", REPO_URL, REPO_REV, path = REPO_PATH))
             val expectedFiles = listOf(
                     File(REPO_PATH, "changes.xml")
             )
 
-            val workingTree = Cvs.download(pkg, outputDir)
+            val workingTree = cvs.download(pkg, outputDir)
             val actualFiles = workingTree.workingDir.walkBottomUp()
                     .onEnter { it.name != "CVS" }
                     .filter { it.isFile }
@@ -90,26 +91,26 @@ class CvsDownloadTest : StringSpec() {
             actualFiles.joinToString("\n") shouldBe expectedFiles.joinToString("\n")
         }
 
-        "CVS can download based on a version".config(enabled = Cvs.isInPath(), tags = setOf(ExpensiveTag)) {
+        "CVS can download based on a version".config(enabled = cvs.isInPath(), tags = setOf(ExpensiveTag)) {
             val pkg = Package.EMPTY.copy(
                     id = Identifier.EMPTY.copy(version = REPO_VERSION),
                     vcsProcessed = VcsInfo("CVS", REPO_URL, "")
             )
 
-            val workingTree = Cvs.download(pkg, outputDir)
+            val workingTree = cvs.download(pkg, outputDir)
 
             // Use forward slashes also on Windows as the CVS client comes from MSYS2.
             val buildXmlFile = "xmlenc/build.xml"
-            val buildXmlStatus = Cvs.run(outputDir, "status", buildXmlFile)
+            val buildXmlStatus = cvs.run(outputDir, "status", buildXmlFile)
 
             workingTree.isValid() shouldBe true
 
             // Only tag "RELEASE_0_52" has revision 1.159 of "xmlenc/build.xml".
-            buildXmlStatus.stdout() should contain("Working revision:\t1.159")
+            buildXmlStatus.stdout should contain("Working revision:\t1.159")
         }
 
         "CVS can download only a single path based on a version"
-                .config(enabled = Cvs.isInPath(), tags = setOf(ExpensiveTag)) {
+                .config(enabled = cvs.isInPath(), tags = setOf(ExpensiveTag)) {
             val pkg = Package.EMPTY.copy(
                     id = Identifier.EMPTY.copy(version = REPO_VERSION),
                     vcsProcessed = VcsInfo("CVS", REPO_URL, "", path = REPO_PATH_FOR_VERSION)
@@ -118,7 +119,7 @@ class CvsDownloadTest : StringSpec() {
                     File(REPO_PATH_FOR_VERSION)
             )
 
-            val workingTree = Cvs.download(pkg, outputDir)
+            val workingTree = cvs.download(pkg, outputDir)
             val actualFiles = workingTree.workingDir.walkBottomUp()
                     .onEnter { it.name != "CVS" }
                     .filter { it.isFile }

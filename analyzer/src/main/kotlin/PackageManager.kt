@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,15 @@ package com.here.ort.analyzer
 
 import ch.frankel.slf4k.*
 
-import com.here.ort.analyzer.managers.*
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.model.OrtIssue
 import com.here.ort.model.Identifier
 import com.here.ort.model.Project
 import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.VcsInfo
-import com.here.ort.utils.collectMessages
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
+import com.here.ort.utils.collectMessagesAsString
 import com.here.ort.utils.log
 import com.here.ort.utils.normalizeVcsUrl
 import com.here.ort.utils.showStackTrace
@@ -39,38 +41,35 @@ import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.ServiceLoader
 
 import kotlin.system.measureTimeMillis
 
-typealias ManagedProjectFiles = Map<PackageManagerFactory<PackageManager>, List<File>>
+typealias ManagedProjectFiles = Map<PackageManagerFactory, List<File>>
 typealias ResolutionResult = MutableMap<File, ProjectAnalyzerResult>
 
 /**
  * A class representing a package manager that handles software dependencies.
+ *
+ * @param analyzerConfig The configuration of the analyzer to use.
+ * @param repoConfig The configuration of the repository to use.
  */
-abstract class PackageManager {
+abstract class PackageManager(
+        protected val analyzerConfig: AnalyzerConfiguration,
+        protected val repoConfig: RepositoryConfiguration
+) {
     companion object {
+        private val LOADER = ServiceLoader.load(PackageManagerFactory::class.java)!!
+
         /**
-         * The prioritized list of all available package managers. This needs to be initialized lazily to ensure the
-         * referred objects, which derive from this class, exist.
+         * The list of all available package managers in the classpath.
          */
-        val ALL by lazy {
-            listOf(
-                    Gradle,
-                    Maven,
-                    SBT,
-                    NPM,
-                    Yarn,
-                    // TODO: CocoaPods,
-                    GoDep,
-                    // TODO: Bower,
-                    PIP,
-                    Bundler,
-                    PhpComposer
-            )
-        }
+        val ALL by lazy { LOADER.iterator().asSequence().toList() }
 
         private val IGNORED_DIRECTORY_MATCHERS = listOf(
+                // Ignore intermediate build system directories.
+                ".gradle",
+                "node_modules",
                 // Ignore resources in a standard Maven / Gradle project layout.
                 "src/main/resources",
                 "src/test/resources",
@@ -87,18 +86,18 @@ abstract class PackageManager {
          * @param directory The root directory to search for managed files.
          * @param packageManagers A list of package managers to use, defaults to [ALL].
          */
-        fun findManagedFiles(directory: File, packageManagers: List<PackageManagerFactory<PackageManager>> = ALL)
+        fun findManagedFiles(directory: File, packageManagers: List<PackageManagerFactory> = ALL)
                 : ManagedProjectFiles {
             require(directory.isDirectory) {
                 "The provided path is not a directory: ${directory.absolutePath}"
             }
 
-            val result = mutableMapOf<PackageManagerFactory<PackageManager>, MutableList<File>>()
+            val result = mutableMapOf<PackageManagerFactory, MutableList<File>>()
 
             Files.walkFileTree(directory.toPath(), object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attributes: BasicFileAttributes): FileVisitResult {
                     if (IGNORED_DIRECTORY_MATCHERS.any { it.matches(dir) }) {
-                        println("Skipping directory '$dir' as it is part of the ignore list.")
+                        log.info { "Skipping directory '$dir' as it is part of the ignore list." }
                         return FileVisitResult.SKIP_SUBTREE
                     }
 
@@ -167,28 +166,37 @@ abstract class PackageManager {
          */
         fun processProjectVcs(projectDir: File, vcsFromProject: VcsInfo = VcsInfo.EMPTY,
                               homepageUrl: String = ""): VcsInfo {
-            val vcsFromWorkingTree = VersionControlSystem.forDirectory(projectDir)
-                    ?.getInfo(projectDir)?.normalize() ?: VcsInfo.EMPTY
-
+            val vcsFromWorkingTree = VersionControlSystem.getPathInfo(projectDir).normalize()
             return vcsFromWorkingTree.merge(processPackageVcs(vcsFromProject, homepageUrl))
         }
     }
 
     /**
-     * Return the name of the package manager's command line application. As the preferred command might depend on the
-     * working directory it needs to be provided.
+     * Return the Java class name as a simple way to refer to the [PackageManager].
      */
-    abstract fun command(workingDir: File): String
+    override fun toString(): String = javaClass.simpleName
+
+    /**
+     * Optional mapping of found [definitionFiles] before dependency resolution.
+     */
+    open fun mapDefinitionFiles(definitionFiles: List<File>): List<File> = definitionFiles
+
+    /**
+     * Optional preparation step for dependency resolution, like checking for prerequisites.
+     */
+    protected open fun prepareResolution(definitionFiles: List<File>) = Unit
 
     /**
      * Return a tree of resolved dependencies (not necessarily declared dependencies, in case conflicts were resolved)
-     * for each provided path.
+     * for all [definitionFiles] which were found by searching the [analyzerRoot] directory.
      */
     open fun resolveDependencies(analyzerRoot: File, definitionFiles: List<File>): ResolutionResult {
         val result = mutableMapOf<File, ProjectAnalyzerResult>()
 
-        prepareResolution(definitionFiles).forEach { definitionFile ->
-            println("Resolving ${javaClass.simpleName} dependencies for '$definitionFile'...")
+        prepareResolution(definitionFiles)
+
+        definitionFiles.forEach { definitionFile ->
+            log.info { "Resolving ${javaClass.simpleName} dependencies for '$definitionFile'..." }
 
             val elapsed = measureTimeMillis {
                 try {
@@ -198,23 +206,24 @@ abstract class PackageManager {
                 } catch (e: Exception) {
                     e.showStackTrace()
 
+                    log.error { "Resolving dependencies for '${definitionFile.name}' failed with: ${e.message}" }
+
                     val relativePath = definitionFile.absoluteFile.relativeTo(analyzerRoot).invariantSeparatorsPath
 
                     val errorProject = Project.EMPTY.copy(
                             id = Identifier(
-                                    provider = toString(),
+                                    type = toString(),
                                     namespace = "",
                                     name = relativePath,
                                     version = ""
                             ),
-                            definitionFilePath = VersionControlSystem.getPathToRoot(definitionFile) ?: "",
+                            definitionFilePath = VersionControlSystem.getPathInfo(definitionFile).path,
                             vcsProcessed = processProjectVcs(definitionFile.parentFile)
                     )
 
-                    result[definitionFile] = ProjectAnalyzerResult(Main.allowDynamicVersions, errorProject,
-                            sortedSetOf(), e.collectMessages())
+                    val errors = listOf(OrtIssue(source = javaClass.simpleName, message = e.collectMessagesAsString()))
 
-                    log.error { "Resolving dependencies for '${definitionFile.name}' failed with: ${e.message}" }
+                    result[definitionFile] = ProjectAnalyzerResult(errorProject, sortedSetOf(), errors)
                 }
             }
 
@@ -227,15 +236,7 @@ abstract class PackageManager {
     }
 
     /**
-     * Optional preparation step for dependency resolution, like checking for prerequisites or mapping
-     * [definitionFiles].
+     * Resolve dependencies for a single [definitionFile] and return a [ProjectAnalyzerResult].
      */
-    protected open fun prepareResolution(definitionFiles: List<File>): List<File> = definitionFiles
-
-    /**
-     * Resolve dependencies for a single [definitionFile], returning the [ProjectAnalyzerResult].
-     */
-    protected open fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
+    abstract fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult?
 }

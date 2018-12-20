@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ class BabelTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
@@ -58,7 +58,7 @@ class BabelTest : StringSpec() {
 
             val pkg = Package(
                     id = Identifier(
-                            provider = "NPM",
+                            type = "NPM",
                             namespace = "",
                             name = "babel-cli",
                             version = "6.26.0"
@@ -76,7 +76,7 @@ class BabelTest : StringSpec() {
                     vcsProcessed = vcsMerged
             )
 
-            val downloadResult = Main.download(pkg, outputDir)
+            val downloadResult = Downloader().download(pkg, outputDir)
 
             downloadResult.sourceArtifact shouldBe null
             downloadResult.vcsInfo shouldNotBe null

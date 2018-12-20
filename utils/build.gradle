@@ -1,18 +1,28 @@
+// Apply core plugins.
+apply plugin: 'java-library'
+
 dependencies {
-    compile('ch.frankel.log4k:slf4k-api:1.0.0') {
+    api("ch.frankel.log4k:slf4k-api:$slf4kVersion") {
         // Our version of the Kotlin runtime is provided by the Gradle plugin.
         exclude module: 'kotlin-runtime'
+        // The Kotlin standard library we use is now called "kotlin-stdlib-jdk8".
+        exclude module: 'kotlin-stdlib'
     }
 
     // Use logback-classic as the logger for slf4k as it allows to change the log level at runtime.
-    compile 'ch.qos.logback:logback-classic:1.2.3'
+    api "ch.qos.logback:logback-classic:$logbackVersion"
 
-    compile "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+    api "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+    api "com.squareup.okhttp3:okhttp:$okhttpVersion"
+    api "com.vdurmont:semver4j:$semverVersion"
 
-    compile "com.jakewharton:disklrucache:$disklrucacheVersion"
-    compile "com.squareup.okhttp3:okhttp:$okhttpVersion"
-    compile "com.vdurmont:semver4j:$semverVersion"
+    implementation "com.jakewharton:disklrucache:$disklrucacheVersion"
 
-    compile "commons-codec:commons-codec:$commonsCodecVersion"
-    compile "org.apache.commons:commons-compress:$commonsCompressVersion"
+    implementation "commons-codec:commons-codec:$commonsCodecVersion"
+    implementation "org.apache.commons:commons-compress:$commonsCompressVersion"
+    implementation "org.tukaani:xz:$xzVersion"
+
+    implementation 'org.jetbrains.kotlin:kotlin-compiler-embeddable'
+    implementation 'org.jetbrains.kotlin:kotlin-script-runtime'
+    implementation 'org.jetbrains.kotlin:kotlin-script-util'
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ package com.here.ort.analyzer
 
 import com.here.ort.model.Identifier
 import com.here.ort.model.PackageCuration
-import com.here.ort.model.yamlMapper
+import com.here.ort.model.readValue
 
 import java.io.File
 
@@ -32,8 +32,7 @@ class YamlFilePackageCurationProvider(
         curationFile: File
 ) : PackageCurationProvider {
     internal val packageCurations: List<PackageCuration> by lazy {
-        val valueType = yamlMapper.typeFactory.constructCollectionType(List::class.java, PackageCuration::class.java)
-        yamlMapper.readValue(curationFile, valueType) as List<PackageCuration>
+        curationFile.readValue<List<PackageCuration>>()
     }
 
     override fun getCurationsFor(identifier: Identifier) = packageCurations.filter { it.id.matches(identifier) }

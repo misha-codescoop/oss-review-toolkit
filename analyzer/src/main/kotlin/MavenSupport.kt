@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ package com.here.ort.analyzer
 
 import ch.frankel.slf4k.*
 
+import com.fasterxml.jackson.module.kotlin.readValue
+
 import com.here.ort.model.HashAlgorithm
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
@@ -40,15 +42,21 @@ import java.util.regex.Pattern
 import org.apache.maven.artifact.repository.LegacyLocalRepositoryManager
 import org.apache.maven.bridge.MavenRepositorySystem
 import org.apache.maven.execution.DefaultMavenExecutionRequest
+import org.apache.maven.execution.DefaultMavenExecutionResult
 import org.apache.maven.execution.MavenExecutionRequest
 import org.apache.maven.execution.MavenExecutionRequestPopulator
+import org.apache.maven.execution.MavenSession
 import org.apache.maven.internal.aether.DefaultRepositorySystemSessionFactory
+import org.apache.maven.model.Scm
 import org.apache.maven.model.building.ModelBuildingRequest
+import org.apache.maven.plugin.LegacySupport
 import org.apache.maven.project.MavenProject
 import org.apache.maven.project.ProjectBuilder
 import org.apache.maven.project.ProjectBuildingException
 import org.apache.maven.project.ProjectBuildingRequest
 import org.apache.maven.project.ProjectBuildingResult
+import org.apache.maven.properties.internal.EnvironmentUtils
+import org.apache.maven.session.scope.internal.SessionScope
 
 import org.codehaus.plexus.DefaultContainerConfiguration
 import org.codehaus.plexus.DefaultPlexusContainer
@@ -64,8 +72,8 @@ import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.impl.RemoteRepositoryManager
 import org.eclipse.aether.impl.RepositoryConnectorProvider
-import org.eclipse.aether.repository.LocalRepositoryManager
 import org.eclipse.aether.repository.RemoteRepository
+import org.eclipse.aether.repository.WorkspaceReader
 import org.eclipse.aether.resolution.ArtifactDescriptorRequest
 import org.eclipse.aether.spi.connector.ArtifactDownload
 import org.eclipse.aether.spi.connector.layout.RepositoryLayoutProvider
@@ -78,34 +86,110 @@ import org.eclipse.aether.transfer.TransferEvent
 
 fun Artifact.identifier() = "$groupId:$artifactId:$version"
 
-class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> LocalRepositoryManager) {
+class MavenSupport(workspaceReader: WorkspaceReader) {
     companion object {
-        private const val GIGABYTE = 1024L * 1024L
-        private const val HOUR = 60 * 60
+        private const val MAX_DISK_CACHE_SIZE_IN_BYTES = 1024L * 1024L * 1024L
+        private const val MAX_DISK_CACHE_ENTRY_AGE_SECONDS = 6 * 60 * 60
 
+        // See http://maven.apache.org/pom.html#SCM.
         val SCM_REGEX = Pattern.compile("scm:(?<type>[^:]+):(?<url>.+)")!!
 
         private val remoteArtifactCache =
-                DiskCache(File(getUserConfigDirectory(), "${Main.TOOL_NAME}/cache/remote_artifacts"),
-                        GIGABYTE, 6 * HOUR)
+                DiskCache(File(getUserConfigDirectory(), "$TOOL_NAME/cache/remote_artifacts"),
+                        MAX_DISK_CACHE_SIZE_IN_BYTES, MAX_DISK_CACHE_ENTRY_AGE_SECONDS)
+
+        private fun createContainer(): PlexusContainer {
+            val configuration = DefaultContainerConfiguration().apply {
+                autoWiring = true
+                classPathScanning = PlexusConstants.SCANNING_INDEX
+                classWorld = ClassWorld("plexus.core", javaClass.classLoader)
+            }
+
+            return DefaultPlexusContainer(configuration).apply {
+                loggerManager = object : BaseLoggerManager() {
+                    override fun createLogger(name: String) = MavenLogger(log.effectiveLevel)
+                }
+            }
+        }
+
+        fun parseLicenses(mavenProject: MavenProject) =
+                mavenProject.licenses.mapNotNull { it.name ?: it.url ?: it.comments }.toSortedSet()
+
+        fun parseScm(scm: Scm?): VcsInfo {
+            if (scm == null) return VcsInfo.EMPTY
+
+            val connection = scm.connection ?: ""
+            val tag = scm.tag?.takeIf { it != "HEAD" } ?: ""
+
+            return SCM_REGEX.matcher(connection).let {
+                if (it.matches()) {
+                    val type = it.group("type")
+                    val url = it.group("url")
+
+                    when {
+                        // CVS URLs usually start with ":pserver:" or ":ext:", but as ":" is also the delimiter used by
+                        // the Maven SCM plugin, no double ":" is used in the connection string and we need to fix it up
+                        //  here.
+                        type == "cvs" && !url.startsWith(":") -> {
+                            VcsInfo(type = type, url = ":$url", revision = tag)
+                        }
+
+                        // Maven does not officially support git-repo as an SCM, see
+                        // http://maven.apache.org/scm/scms-overview.html, so come up with a convention to use the URL
+                        // fragment for the path to the manifest inside the repository.
+                        type == "git-repo" -> {
+                            VcsInfo(type = type, url = url.substringBefore('?'), revision = tag,
+                                    path = url.substringAfter('?'))
+                        }
+
+                        type == "svn" -> {
+                            // With Subversion, a tag actually is a path and not a symbolic revision.
+                            val path = tag.takeIf { it.isEmpty() } ?: "tags/$tag"
+                            VcsInfo(type = type, url = url, revision = "", path = path)
+                        }
+
+                        else -> VcsInfo(type = type, url = url, revision = tag)
+                    }
+                } else {
+                    if (connection.isNotEmpty()) {
+                        log.info { "Ignoring Maven SCM connection URL '$connection' of unexpected format." }
+                    }
+
+                    VcsInfo.EMPTY
+                }
+            }
+        }
+
+        fun parseVcsInfo(mavenProject: MavenProject): VcsInfo {
+            // When asking Maven for the SCM URL of a POM that does not itself define an SCM URL, Maven returns the SCM
+            // URL of the parent POM (if any) and appends the child POM's artifactId to it. This behavior is
+            // fundamentally broken because it invalidates the URL for many SCMs that cannot clone / checkout a specific
+            // path from a repository. Also, the assumption that the source code for a child artifact is stored in a
+            // top-level directory named like the artifactId inside the parent artifact's repository is often not
+            // correct.
+            // To fix this, determine the SCM URL of the root parent (if there are parents) and use that as the child's
+            // SCM URL.
+            var scm = mavenProject.scm
+            var parent = mavenProject.parent
+
+            while (parent != null) {
+                parent.scm?.let {
+                    it.connection?.let { connection ->
+                        if (connection.isNotBlank() && scm.connection.startsWith(connection)) {
+                            scm = parent.scm
+                        }
+                    }
+                }
+
+                parent = parent.parent
+            }
+
+            return parseScm(scm)
+        }
     }
 
     val container = createContainer()
-    private val repositorySystemSession = createRepositorySystemSession(localRepositoryManagerConverter)
-
-    private fun createContainer(): PlexusContainer {
-        val configuration = DefaultContainerConfiguration().apply {
-            autoWiring = true
-            classPathScanning = PlexusConstants.SCANNING_INDEX
-            classWorld = ClassWorld("plexus.core", javaClass.classLoader)
-        }
-
-        return DefaultPlexusContainer(configuration).apply {
-            loggerManager = object : BaseLoggerManager() {
-                override fun createLogger(name: String) = MavenLogger(log.effectiveLevel)
-            }
-        }
-    }
+    private val repositorySystemSession = createRepositorySystemSession(workspaceReader)
 
     // The MavenSettingsBuilder class is deprecated but internally it uses its successor SettingsBuilder. Calling
     // MavenSettingsBuilder requires less code than calling SettingsBuilder, so use it until it is removed.
@@ -113,8 +197,9 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
     private fun createMavenExecutionRequest(): MavenExecutionRequest {
         val request = DefaultMavenExecutionRequest()
 
-        request.systemProperties["java.home"] = System.getProperty("java.home")
-        request.systemProperties["java.version"] = System.getProperty("java.version")
+        val props = System.getProperties()
+        EnvironmentUtils.addEnvVars(props)
+        request.systemProperties = props
 
         val populator = container.lookup(MavenExecutionRequestPopulator::class.java, "default")
 
@@ -131,9 +216,7 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
         return request
     }
 
-    private fun createRepositorySystemSession(
-            localRepositoryManagerConverter: (LocalRepositoryManager) -> LocalRepositoryManager = { it })
-            : RepositorySystemSession {
+    private fun createRepositorySystemSession(workspaceReader: WorkspaceReader): RepositorySystemSession {
         val mavenRepositorySystem = container.lookup(MavenRepositorySystem::class.java, "default")
         val aetherRepositorySystem = container.lookup(RepositorySystem::class.java, "default")
         val repositorySystemSessionFactory = container.lookup(DefaultRepositorySystemSessionFactory::class.java,
@@ -148,13 +231,7 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
         val session = LegacyLocalRepositoryManager.overlay(localRepository, repositorySystemSession,
                 aetherRepositorySystem)
 
-        val localRepositoryManager = localRepositoryManagerConverter(session.localRepositoryManager)
-
-        return if (localRepositoryManager == session.localRepositoryManager) {
-            session
-        } else {
-            DefaultRepositorySystemSession(session).setLocalRepositoryManager(localRepositoryManager)
-        }
+        return DefaultRepositorySystemSession(session).setWorkspaceReader(workspaceReader)
     }
 
     fun buildMavenProject(pomFile: File): ProjectBuildingResult {
@@ -162,7 +239,9 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
         val projectBuildingRequest = createProjectBuildingRequest(true)
 
         return try {
-            projectBuilder.build(pomFile, projectBuildingRequest)
+            wrapMavenSession {
+                projectBuilder.build(pomFile, projectBuildingRequest)
+            }
         } catch (e: ProjectBuildingException) {
             e.showStackTrace()
 
@@ -196,7 +275,7 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
     private fun requestRemoteArtifact(artifact: Artifact, repositories: List<RemoteRepository>): RemoteArtifact {
         remoteArtifactCache.read(artifact.toString())?.let {
             log.debug { "Reading remote artifact for '$artifact' from disk cache." }
-            return yamlMapper.readValue(it, RemoteArtifact::class.java)
+            return yamlMapper.readValue(it)
         }
 
         val repoSystem = container.lookup(RepositorySystem::class.java, "default")
@@ -211,10 +290,21 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
                 .readArtifactDescriptor(repositorySystemSession, artifactDescriptorRequest)
         val allRepositories = (artifactDescriptorResult.repositories + repositories).distinct()
 
-        // Filter local repositories, as remote artifacts should never point to files on the local disk.
-        val remoteRepositories = allRepositories.filterNot { it.url.startsWith("file:/") }
-        log.debug { "Found potential repositories for '$artifact': $remoteRepositories" }
-        log.debug { "Ignoring local repositories: ${allRepositories - remoteRepositories}" }
+        // Filter out local repositories, as remote artifacts should never point to files on the local disk.
+        val remoteRepositories = allRepositories.filterNot {
+            // Some (Linux) file URIs do not start with "file://" but look like "file:/opt/android-sdk-linux".
+            it.url.startsWith("file:/")
+        }
+
+        if (log.isDebugEnabled) {
+            val localRepositories = allRepositories - remoteRepositories
+            if (localRepositories.isNotEmpty()) {
+                // No need to use curly-braces-syntax for logging here as the log level check is already done above.
+                log.debug("Ignoring local repositories $localRepositories.")
+            }
+        }
+
+        log.debug { "Searching for '$artifact' in $remoteRepositories." }
 
         // Check the remote repositories for the availability of the artifact.
         // TODO: Currently only the first hit is stored, could query the rest of the repositories if required.
@@ -252,9 +342,11 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
             }
 
             try {
-                val repositoryConnector = repositoryConnectorProvider
-                        .newRepositoryConnector(repositorySystemSession, repository)
-                repositoryConnector.get(listOf(artifactDownload), null)
+                wrapMavenSession {
+                    val repositoryConnector = repositoryConnectorProvider
+                            .newRepositoryConnector(repositorySystemSession, repository)
+                    repositoryConnector.get(listOf(artifactDownload), null)
+                }
             } catch (e: NoRepositoryConnectorException) {
                 e.showStackTrace()
 
@@ -328,7 +420,7 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
                      localProjects: Map<String, MavenProject> = emptyMap(), sbtMode: Boolean = false): Package {
         val mavenRepositorySystem = container.lookup(MavenRepositorySystem::class.java, "default")
         val projectBuilder = container.lookup(ProjectBuilder::class.java, "default")
-        val projectBuildingRequest = createProjectBuildingRequest(true)
+        val projectBuildingRequest = createProjectBuildingRequest(false)
 
         projectBuildingRequest.remoteRepositories = repositories.map { repo ->
             // As the ID might be used as the key when generating a metadata file name, avoid the URL being used as the
@@ -339,12 +431,16 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
 
         val localProject = localProjects[artifact.identifier()]
 
-        val mavenProject = localProject ?: artifact.let {
+        val mavenProject = localProject?.also {
+            log.info { "'${artifact.identifier()}' refers to a local project." }
+        } ?: artifact.let {
             val pomArtifact = mavenRepositorySystem
                     .createArtifact(it.groupId, it.artifactId, it.version, "", "pom")
 
             try {
-                projectBuilder.build(pomArtifact, projectBuildingRequest).project
+                wrapMavenSession {
+                    projectBuilder.build(pomArtifact, projectBuildingRequest).project
+                }
             } catch (e: ProjectBuildingException) {
                 e.showStackTrace()
 
@@ -365,16 +461,20 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
             }
         }
 
-        val binaryRemoteArtifact = requestRemoteArtifact(artifact, repositories)
+        val binaryRemoteArtifact = localProject?.let {
+            RemoteArtifact.EMPTY
+        } ?: requestRemoteArtifact(artifact, repositories)
 
-        val sourceRemoteArtifact = if (artifact.extension == "pom") {
-            binaryRemoteArtifact
-        } else {
-            val sourceArtifact = artifact.let {
-                DefaultArtifact(it.groupId, it.artifactId, "sources", "jar", it.version)
+        val sourceRemoteArtifact = when {
+            localProject != null -> RemoteArtifact.EMPTY
+            artifact.extension == "pom" -> binaryRemoteArtifact
+            else -> {
+                val sourceArtifact = artifact.let {
+                    DefaultArtifact(it.groupId, it.artifactId, "sources", "jar", it.version)
+                }
+
+                requestRemoteArtifact(sourceArtifact, repositories)
             }
-
-            requestRemoteArtifact(sourceArtifact, repositories)
         }
 
         val vcsFromPackage = parseVcsInfo(mavenProject)
@@ -394,7 +494,7 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
 
         return Package(
                 id = Identifier(
-                        provider = "Maven",
+                        type = "Maven",
                         namespace = mavenProject.groupId,
                         name = mavenProject.artifactId,
                         version = mavenProject.version
@@ -409,55 +509,29 @@ class MavenSupport(localRepositoryManagerConverter: (LocalRepositoryManager) -> 
         )
     }
 
-    fun parseLicenses(mavenProject: MavenProject) =
-            mavenProject.licenses.mapNotNull { it.name ?: it.url ?: it.comments }.toSortedSet()
+    /**
+     * Create a [MavenSession] and setup the [LegacySupport] and [SessionScope] because this is required to load
+     * extensions using Maven Wagon.
+     */
+    private fun <R> wrapMavenSession(block: () -> R): R {
+        val request = DefaultMavenExecutionRequest()
+        val result = DefaultMavenExecutionResult()
 
-    fun parseVcsInfo(mavenProject: MavenProject): VcsInfo {
-        // When asking Maven for the SCM URL of a POM that does not itself define an SCM URL, Maven returns the SCM
-        // URL of the parent POM (if any) and appends the child POM's artifactId to it. This behavior is
-        // fundamentally broken because it invalidates the URL for many SCMs that cannot clone / checkout a specific
-        // path from a repository. Also, the assumption that the source code for a child artifact is stored in a
-        // top-level directory named like the artifactId inside the parent artifact's repository is often not
-        // correct.
-        // To fix this, determine the SCM URL of the root parent (if there are parents) and use that as the child's
-        // SCM URL.
-        var scm = mavenProject.scm
-        var parent = mavenProject.parent
+        @Suppress("DEPRECATION")
+        val mavenSession = MavenSession(container, repositorySystemSession, request, result)
 
-        while (parent != null) {
-            parent.scm?.let {
-                it.connection?.let {
-                    if (it.isNotBlank() && scm.connection.startsWith(it)) {
-                        scm = parent.scm
-                    }
-                }
-            }
+        val legacySupport = container.lookup(LegacySupport::class.java, "default")
+        legacySupport.session = mavenSession
 
-            parent = parent.parent
+        val sessionScope = container.lookup(SessionScope::class.java, "default")
+        sessionScope.enter()
+
+        try {
+            sessionScope.seed(MavenSession::class.java, mavenSession)
+            return block()
+        } finally {
+            sessionScope.exit()
+            legacySupport.session = null
         }
-
-        if (scm == null) return VcsInfo.EMPTY
-
-        val connection = scm.connection ?: ""
-        val tag = scm.tag?.takeIf { it != "HEAD" } ?: ""
-
-        val (type, url) = SCM_REGEX.matcher(connection).let {
-            if (it.matches()) {
-                val type = it.group("type")
-                val url = it.group("url")
-
-                // CVS URLs usually start with ":pserver:" or ":ext:", but as ":" is also the delimiter used by the
-                // Maven SCM plugin, no double ":" is used in the connection string and we need to fix it up here.
-                if (type == "cvs" && !url.startsWith(":")) {
-                    Pair(type, ":$url")
-                } else {
-                    Pair(type, url)
-                }
-            } else {
-                Pair("", "")
-            }
-        }
-
-        return VcsInfo(type, url, tag)
     }
 }

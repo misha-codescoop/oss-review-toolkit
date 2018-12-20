@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@
  */
 
 package com.here.ort.model
+
+import com.fasterxml.jackson.annotation.JsonInclude
 
 import com.vdurmont.semver4j.Semver
 
@@ -40,8 +42,14 @@ data class ScannerDetails(
         /**
          * The configuration of the scanner, could be command line arguments for example.
          */
-        val configuration: String
-) : CustomData() {
+        val configuration: String,
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) {
     private val MAJOR_MINOR = EnumSet.of(Semver.VersionDiff.MAJOR, Semver.VersionDiff.MINOR)
 
     /**

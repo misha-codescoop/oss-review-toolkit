@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,11 @@ import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.yamlMapper
 import com.here.ort.utils.normalizeVcsUrl
 import com.here.ort.utils.safeDeleteRecursively
-import com.here.ort.utils.test.USER_DIR
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.DEFAULT_REPOSITORY_CONFIGURATION
+import com.here.ort.utils.test.patchActualResult
 import com.here.ort.utils.test.patchExpectedResult
+import com.here.ort.utils.test.USER_DIR
 
 import io.kotlintest.Description
 import io.kotlintest.TestResult
@@ -48,7 +51,7 @@ class BabelTest : WordSpec() {
                 val nodeModulesDir = File(it, "node_modules")
                 val gitKeepFile = File(nodeModulesDir, ".gitkeep")
                 if (nodeModulesDir.isDirectory && !gitKeepFile.isFile) {
-                    nodeModulesDir.safeDeleteRecursively()
+                    nodeModulesDir.safeDeleteRecursively(force = true)
                 }
             }
         }
@@ -57,7 +60,7 @@ class BabelTest : WordSpec() {
     init {
         "Babel dependencies" should {
             "be correctly analyzed" {
-                val npm = NPM.create()
+                val npm = NPM(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
                 val packageFile = File(projectDir, "package.json")
 
                 val expectedResult = patchExpectedResult(
@@ -67,7 +70,7 @@ class BabelTest : WordSpec() {
                 )
                 val actualResult = npm.resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
-                yamlMapper.writeValueAsString(actualResult) shouldBe expectedResult
+                patchActualResult(yamlMapper.writeValueAsString(actualResult)) shouldBe expectedResult
             }
         }
     }

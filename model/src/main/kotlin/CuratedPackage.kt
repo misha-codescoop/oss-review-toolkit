@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
  */
 data class CuratedPackage(
         /**
-         * The cureated package after applying the [curations].
+         * The curated package after applying the [curations].
          */
         @JsonProperty("package")
         val pkg: Package,

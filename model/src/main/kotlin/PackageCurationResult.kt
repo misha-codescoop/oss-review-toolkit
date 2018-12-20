@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@
 
 package com.here.ort.model
 
+import com.fasterxml.jackson.annotation.JsonInclude
+
 /**
  * This class contains information about which values were changed when applying a curation.
  */
@@ -31,5 +33,11 @@ data class PackageCurationResult(
         /**
          * The curation that was applied.
          */
-        val curation: PackageCurationData
-) : CustomData()
+        val curation: PackageCurationData,
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+)

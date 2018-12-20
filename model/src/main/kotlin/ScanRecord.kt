@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,16 @@
 
 package com.here.ort.model
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
+
 import java.util.SortedSet
 
 /**
  * A record of a single run of the scanner tool, containing the input and the scan results for all scanned packages.
  */
+@JsonIgnoreProperties(value = ["has_errors"], allowGetters = true)
 data class ScanRecord(
-        /**
-         * The [AnalyzerResult] that was used as input for the scanner.
-         */
-        val analyzerResult: AnalyzerResult,
-
         /**
          * The scanned and ignored [Scope]s for each scanned [Project] by id.
          */
@@ -43,11 +42,17 @@ data class ScanRecord(
         /**
          * The [CacheStatistics] for the scan results cache.
          */
-        val cacheStats: CacheStatistics
-) : CustomData() {
+        val cacheStats: CacheStatistics,
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) {
     /**
-     * True if the [analyzerResult] or any of the [scanResults] contain errors.
+     * True if any of the [scanResults] contain errors.
      */
-    val hasErrors = analyzerResult.createProjectAnalyzerResults().any { it.hasErrors() }
-            || scanResults.any { it.results.any { it.summary.errors.isNotEmpty() } }
+    @Suppress("UNUSED") // Not used in code, but shall be serialized.
+    val hasErrors by lazy { scanResults.any { it.results.any { it.summary.errors.isNotEmpty() } } }
 }

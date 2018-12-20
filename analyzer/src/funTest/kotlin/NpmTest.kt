@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,11 @@ import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.yamlMapper
 import com.here.ort.utils.normalizeVcsUrl
 import com.here.ort.utils.safeDeleteRecursively
-import com.here.ort.utils.test.USER_DIR
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.DEFAULT_REPOSITORY_CONFIGURATION
+import com.here.ort.utils.test.patchActualResult
 import com.here.ort.utils.test.patchExpectedResult
+import com.here.ort.utils.test.USER_DIR
 
 import io.kotlintest.Description
 import io.kotlintest.TestResult
@@ -48,7 +51,7 @@ class NpmTest : WordSpec() {
                 val nodeModulesDir = File(it, "node_modules")
                 val gitKeepFile = File(nodeModulesDir, ".gitkeep")
                 if (nodeModulesDir.isDirectory && !gitKeepFile.isFile) {
-                    nodeModulesDir.safeDeleteRecursively()
+                    nodeModulesDir.safeDeleteRecursively(force = true)
                 }
             }
         }
@@ -59,9 +62,9 @@ class NpmTest : WordSpec() {
             "resolve shrinkwrap dependencies correctly" {
                 val workingDir = File(projectsDir, "shrinkwrap")
                 val packageFile = File(workingDir, "package.json")
-                val npm = NPM.create()
 
-                val result = npm.resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+                val result = NPM(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                        .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
                 val vcsPath = vcsDir.getPathToRoot(workingDir)
                 val expectedResult = patchExpectedResult(
                         File(projectsDir.parentFile, "npm-expected-output.yml"),
@@ -78,9 +81,9 @@ class NpmTest : WordSpec() {
             "resolve package-lock dependencies correctly" {
                 val workingDir = File(projectsDir, "package-lock")
                 val packageFile = File(workingDir, "package.json")
-                val npm = NPM.create()
 
-                val result = npm.resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+                val result = NPM(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                        .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
                 val vcsPath = vcsDir.getPathToRoot(workingDir)
                 val expectedResult = patchExpectedResult(
                         File(projectsDir.parentFile, "npm-expected-output.yml"),
@@ -98,7 +101,8 @@ class NpmTest : WordSpec() {
                 val workingDir = File(projectsDir, "no-lockfile")
                 val packageFile = File(workingDir, "package.json")
 
-                val result = NPM.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+                val result = NPM(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                        .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
                 val vcsPath = vcsDir.getPathToRoot(workingDir)
                 val expectedResult = patchExpectedResult(
                         File(projectsDir.parentFile, "npm-expected-output-no-lockfile.yml"),
@@ -109,15 +113,15 @@ class NpmTest : WordSpec() {
                         path = vcsPath
                 )
 
-                yamlMapper.writeValueAsString(result) shouldBe expectedResult
+                patchActualResult(yamlMapper.writeValueAsString(result)) shouldBe expectedResult
             }
 
             "resolve dependencies even if the node_modules directory already exists" {
                 val workingDir = File(projectsDir, "node-modules")
                 val packageFile = File(workingDir, "package.json")
-                val npm = NPM.create()
 
-                val result = npm.resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+                val result = NPM(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                        .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
                 val vcsPath = vcsDir.getPathToRoot(workingDir)
                 val expectedResult = patchExpectedResult(
                         File(projectsDir.parentFile, "npm-expected-output.yml"),

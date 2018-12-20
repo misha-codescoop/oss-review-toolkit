@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 
 package com.here.ort.analyzer.integration
 
-import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.analyzer.managers.Bundler
 import com.here.ort.model.Identifier
@@ -32,7 +31,7 @@ import java.io.File
 class SimpleFormIntegrationTest : AbstractIntegrationSpec() {
     override val pkg: Package = Package(
             id = Identifier(
-                    provider = "Bundler",
+                    type = "Bundler",
                     namespace = "",
                     name = "Simple Form",
                     version = ""
@@ -50,10 +49,10 @@ class SimpleFormIntegrationTest : AbstractIntegrationSpec() {
             )
     )
 
-    override val expectedDefinitionFiles by lazy {
+    override val expectedManagedFiles by lazy {
         val downloadDir = downloadResult.downloadDirectory
         mapOf(
-                Bundler as PackageManagerFactory<PackageManager> to listOf(
+                Bundler.Factory() as PackageManagerFactory to listOf(
                         File(downloadDir, "Gemfile")
                 )
         )

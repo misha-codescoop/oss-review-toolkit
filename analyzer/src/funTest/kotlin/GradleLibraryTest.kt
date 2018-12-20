@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import com.here.ort.analyzer.managers.Gradle
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.yamlMapper
 import com.here.ort.utils.normalizeVcsUrl
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.DEFAULT_REPOSITORY_CONFIGURATION
 import com.here.ort.utils.test.USER_DIR
 import com.here.ort.utils.test.patchExpectedResult
 
@@ -47,7 +49,8 @@ class GradleLibraryTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()
@@ -62,7 +65,8 @@ class GradleLibraryTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()
@@ -77,7 +81,8 @@ class GradleLibraryTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 
-import com.here.ort.analyzer.Main
+import com.here.ort.analyzer.HTTP_CACHE_PATH
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.AbstractPackageManagerFactory
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.EMPTY_JSON_NODE
 import com.here.ort.model.HashAlgorithm
@@ -38,39 +38,54 @@ import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.Scope
 import com.here.ort.model.VcsInfo
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
 import com.here.ort.model.jsonMapper
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.OkHttpClientHelper
 import com.here.ort.utils.OS
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.checkCommandVersion
 import com.here.ort.utils.log
 import com.here.ort.utils.safeDeleteRecursively
+import com.here.ort.utils.showStackTrace
+import com.here.ort.utils.textValueOrEmpty
 
 import com.vdurmont.semver4j.Requirement
 
 import java.io.File
 import java.io.IOException
+import java.lang.IllegalArgumentException
 import java.net.HttpURLConnection
 import java.util.SortedSet
 
 import okhttp3.Request
 
-class PIP : PackageManager() {
-    companion object : PackageManagerFactory<PIP>(
-            "https://pip.pypa.io/",
-            "Python",
-            // See https://packaging.python.org/discussions/install-requires-vs-requirements/ and
-            // https://caremad.io/posts/2013/07/setup-vs-requirement/.
-            listOf("requirements*.txt", "setup.py")
-    ) {
-        override fun create() = PIP()
+const val PIP_VERSION = "9.0.3"
 
-        private const val PIP_VERSION = "9.0.3"
+const val PIPDEPTREE_VERSION = "0.13.0"
+val PIPDEPTREE_DEPENDENCIES = arrayOf("pipdeptree", "setuptools", "wheel")
 
-        private const val PIPDEPTREE_VERSION = "0.12.1"
-        private val PIPDEPTREE_DEPENDENCIES = arrayOf("pipdeptree", "setuptools", "wheel")
+const val PYDEP_REVISION = "license-and-classifiers"
 
-        private const val PYDEP_REVISION = "license-and-classifiers"
+// virtualenv bundles pip. In order to get pip 9.0.1 inside a virtualenv, which is a version that supports
+// installing packages from a Git URL that include a commit SHA1, we need at least virtualenv 15.1.0.
+object VirtualEnv : CommandLineTool {
+    override fun command(workingDir: File?) = "virtualenv"
+    override fun getVersionRequirement(): Requirement = Requirement.buildIvy("15.1.+")
+}
+
+/**
+ * The PIP package manager for Python, see https://pip.pypa.io/. Also see
+ * https://packaging.python.org/discussions/install-requires-vs-requirements/ and
+ * https://caremad.io/posts/2013/07/setup-vs-requirement/.
+ */
+class PIP(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig), CommandLineTool {
+    class Factory : AbstractPackageManagerFactory<PIP>() {
+        override val globsForDefinitionFiles = listOf("requirements*.txt", "setup.py")
+
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                PIP(analyzerConfig, repoConfig)
     }
 
     // TODO: Need to replace this hard-coded list of domains with e.g. a command line option.
@@ -79,9 +94,7 @@ class PIP : PackageManager() {
             "pypi.python.org" // Legacy
     ).flatMap { listOf("--trusted-host", it) }.toTypedArray()
 
-    override fun command(workingDir: File) = "pip"
-
-    override fun toString() = PIP.toString()
+    override fun command(workingDir: File?) = "pip"
 
     private fun runPipInVirtualEnv(virtualEnvDir: File, workingDir: File, vararg commandArgs: String) =
             runInVirtualEnv(virtualEnvDir, workingDir, command(workingDir), *TRUSTED_HOSTS, *commandArgs)
@@ -103,17 +116,12 @@ class PIP : PackageManager() {
         // TODO: Maybe work around long shebang paths in generated scripts within a virtualenv by calling the Python
         // executable in the virtualenv directly, see https://github.com/pypa/virtualenv/issues/997.
         val process = ProcessCapture(workingDir, command.path, *commandArgs)
-        log.debug { process.stdout() }
+        log.debug { process.stdout }
         return process
     }
 
-    override fun prepareResolution(definitionFiles: List<File>): List<File> {
-        // virtualenv bundles pip. In order to get pip 9.0.1 inside a virtualenv, which is a version that supports
-        // installing packages from a Git URL that include a commit SHA1, we need at least virtualenv 15.1.0.
-        checkCommandVersion("virtualenv", Requirement.buildIvy("15.1.+"), ignoreActualVersion = Main.ignoreVersions)
-
-        return definitionFiles
-    }
+    override fun prepareResolution(definitionFiles: List<File>) =
+            VirtualEnv.checkVersion(ignoreActualVersion = analyzerConfig.ignoreToolVersions)
 
     override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
         // For an overview, dependency resolution involves the following steps:
@@ -144,7 +152,8 @@ class PIP : PackageManager() {
 
         var declaredLicenses: SortedSet<String> = sortedSetOf<String>()
 
-        val (projectName, projectVersion, projectHomepage) = if (File(workingDir, "setup.py").isFile) {
+        // First try to get meta-data from "setup.py" in any case, even for "requirements.txt" projects.
+        val (setupName, setupVersion, setupHomepage) = if (File(workingDir, "setup.py").isFile) {
             val pydep = if (OS.isWindows) {
                 // On Windows, the script itself is not executable, so we need to wrap the call by "python".
                 runInVirtualEnv(virtualEnvDir, workingDir, "python",
@@ -158,24 +167,51 @@ class PIP : PackageManager() {
             // - "url", denoting the "home page for the package", or
             // - "download_url", denoting the "location where the package may be downloaded".
             // So the best we can do is to map this the project's homepage URL.
-            jsonMapper.readTree(pydep.stdout()).let {
+            jsonMapper.readTree(pydep.stdout).let {
                 declaredLicenses = getDeclaredLicenses(it)
-                listOf(it["project_name"].textValue(), it["version"].textValue(), it["repo_url"].textValue())
+                listOf(it["project_name"].textValue(), it["version"].textValueOrEmpty(),
+                        it["repo_url"].textValueOrEmpty())
             }
         } else {
+            listOf("", "", "")
+        }
+
+        // Try to get additional information from any "requirements.txt" file.
+        val (requirementsName, requirementsVersion, requirementsSuffix) = if (definitionFile.name != "setup.py") {
+            val pythonVersionLines = definitionFile.readLines().filter { it.contains("python_version") }
+            if (pythonVersionLines.isNotEmpty()) {
+                log.debug {
+                    "Some dependencies have Python version requirements:\n$pythonVersionLines"
+                }
+            }
+
             // In case of "requirements*.txt" there is no meta-data at all available, so use the parent directory name
             // plus what "*" expands to as the project name and the VCS revision, if any, as the project version.
-            val name = definitionFile.parentFile.name +
-                    definitionFile.name.removePrefix("requirements").removeSuffix(".txt")
-            val version = VersionControlSystem.forDirectory(workingDir)?.getRevision() ?: ""
-            listOf(name, version, "")
+            val suffix = definitionFile.name.removePrefix("requirements").removeSuffix(".txt")
+            val name = definitionFile.parentFile.name + suffix
+
+            val version = VersionControlSystem.getCloneInfo(workingDir).revision
+
+            listOf(name, version, suffix)
+        } else {
+            listOf("", "", "")
         }
+
+        // Amend information from "setup.py" with that from "requirements.txt".
+        val projectName = when (Pair(setupName.isNotEmpty(), requirementsName.isNotEmpty())) {
+            Pair(true, false) -> setupName
+            Pair(false, true) -> requirementsName
+            Pair(true, true) -> "$setupName-requirements$requirementsSuffix"
+            else -> throw IllegalArgumentException("Unbale to determine a project name for '$definitionFile'.")
+        }
+        val projectVersion = setupVersion.takeIf { it.isNotEmpty() } ?: requirementsVersion
+        val projectHomepage = setupHomepage
 
         val packages = sortedSetOf<Package>()
         val installDependencies = sortedSetOf<PackageReference>()
 
-        if (pipdeptree.isSuccess()) {
-            val fullDependencyTree = jsonMapper.readTree(pipdeptree.stdout())
+        if (pipdeptree.isSuccess) {
+            val fullDependencyTree = jsonMapper.readTree(pipdeptree.stdout)
 
             val projectDependencies = if (definitionFile.name == "setup.py") {
                 // The tree contains a root node for the project itself and pipdeptree's dependencies are also at the
@@ -205,13 +241,13 @@ class PIP : PackageManager() {
                         .url("https://pypi.org/pypi/${pkg.id.name}/${pkg.id.version}/json")
                         .build()
 
-                OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, pkgRequest).use { response ->
+                OkHttpClientHelper.execute(HTTP_CACHE_PATH, pkgRequest).use { response ->
                     val body = response.body()?.string()?.trim()
 
                     if (response.code() != HttpURLConnection.HTTP_OK || body.isNullOrEmpty()) {
                         log.warn { "Unable to retrieve PyPI meta-data for package '${pkg.id}'." }
                         if (body != null) {
-                            log.warn { "Response was '$body'." }
+                            log.warn { "The response was '$body' (code ${response.code()})." }
                         }
 
                         // Fall back to returning the original package data.
@@ -221,6 +257,8 @@ class PIP : PackageManager() {
                     val pkgData = try {
                         jsonMapper.readTree(body)!!
                     } catch (e: IOException) {
+                        e.showStackTrace()
+
                         log.warn { "Unable to parse PyPI meta-data for package '${pkg.id}': ${e.message}" }
 
                         // Fall back to returning the original package data.
@@ -232,7 +270,7 @@ class PIP : PackageManager() {
 
                         val pkgDescription = pkgInfo["summary"]?.textValue() ?: pkg.description
                         val pkgHomepage = pkgInfo["home_page"]?.textValue() ?: pkg.homepageUrl
-                        val pkgReleases = pkgData["releases"][pkg.id.version] as ArrayNode
+                        val pkgReleases = pkgData["releases"][pkg.id.version] as? ArrayNode
 
                         // Amend package information with more details.
                         Package(
@@ -240,12 +278,22 @@ class PIP : PackageManager() {
                                 declaredLicenses = getDeclaredLicenses(pkgInfo),
                                 description = pkgDescription,
                                 homepageUrl = pkgHomepage,
-                                binaryArtifact = getBinaryArtifact(pkg, pkgReleases),
-                                sourceArtifact = getSourceArtifact(pkgReleases),
+                                binaryArtifact = if (pkgReleases != null) {
+                                    getBinaryArtifact(pkg, pkgReleases)
+                                } else {
+                                    pkg.binaryArtifact
+                                },
+                                sourceArtifact = if (pkgReleases != null) {
+                                    getSourceArtifact(pkgReleases)
+                                } else {
+                                    pkg.sourceArtifact
+                                },
                                 vcs = pkg.vcs,
                                 vcsProcessed = processPackageVcs(pkg.vcs, pkgHomepage)
                         )
                     } catch (e: NullPointerException) {
+                        e.showStackTrace()
+
                         log.warn { "Unable to parse PyPI meta-data for package '${pkg.id}': ${e.message}" }
 
                         // Fall back to returning the original package data.
@@ -255,25 +303,24 @@ class PIP : PackageManager() {
             }
         } else {
             log.error {
-                "Unable to determine dependencies for project in directory '$workingDir':\n${pipdeptree.stderr()}"
+                "Unable to determine dependencies for project in directory '$workingDir':\n${pipdeptree.stderr}"
             }
         }
 
         // TODO: Handle "extras" and "tests" dependencies.
         val scopes = sortedSetOf(
-                Scope("install", true, installDependencies)
+                Scope("install", installDependencies)
         )
 
         val project = Project(
                 id = Identifier(
-                        provider = toString(),
+                        type = toString(),
                         namespace = "",
                         name = projectName,
                         version = projectVersion
                 ),
-                definitionFilePath = VersionControlSystem.getPathToRoot(definitionFile) ?: "",
+                definitionFilePath = VersionControlSystem.getPathInfo(definitionFile).path,
                 declaredLicenses = declaredLicenses,
-                aliases = emptyList(),
                 vcs = VcsInfo.EMPTY,
                 vcsProcessed = processProjectVcs(workingDir, homepageUrl = projectHomepage),
                 homepageUrl = projectHomepage,
@@ -283,7 +330,7 @@ class PIP : PackageManager() {
         // Remove the virtualenv by simply deleting the directory.
         virtualEnvDir.safeDeleteRecursively()
 
-        return ProjectAnalyzerResult(true, project, packages.map { it.toCuratedPackage() }.toSortedSet())
+        return ProjectAnalyzerResult(project, packages.map { it.toCuratedPackage() }.toSortedSet())
     }
 
     private fun getBinaryArtifact(pkg: Package, pkgReleases: ArrayNode): RemoteArtifact {
@@ -292,11 +339,10 @@ class PIP : PackageManager() {
             it["packagetype"].textValue() == "bdist_wheel"
         } ?: pkgReleases[0]
 
-        return RemoteArtifact(
-                url = pkgRelease["url"]?.textValue() ?: pkg.binaryArtifact.url,
-                hash = pkgRelease["md5_digest"]?.textValue() ?: pkg.binaryArtifact.hash,
-                hashAlgorithm = HashAlgorithm.MD5
-        )
+        val url = pkgRelease["url"]?.textValue() ?: pkg.binaryArtifact.url
+        val hash = pkgRelease["md5_digest"]?.textValue() ?: pkg.binaryArtifact.hash
+
+        return RemoteArtifact(url = url, hash = hash, hashAlgorithm = HashAlgorithm.fromHash(hash))
     }
 
     private fun getSourceArtifact(pkgReleases: ArrayNode): RemoteArtifact {
@@ -313,26 +359,22 @@ class PIP : PackageManager() {
         val url = pkgSource["url"]?.textValue() ?: return RemoteArtifact.EMPTY
         val hash = pkgSource["md5_digest"]?.textValue() ?: return RemoteArtifact.EMPTY
 
-        return RemoteArtifact(url, hash, HashAlgorithm.MD5)
+        return RemoteArtifact(url, hash, HashAlgorithm.fromHash(hash))
     }
 
     private fun getDeclaredLicenses(pkgInfo: JsonNode): SortedSet<String> {
         val declaredLicenses = sortedSetOf<String>()
 
         // Use the top-level license field as well as the license classifiers as the declared licenses.
-        setOf(pkgInfo["license"]).mapNotNullTo(declaredLicenses) {
-            it?.textValue()?.removeSuffix(" License")?.takeUnless { it.isBlank() || it == "UNKNOWN" }
+        setOf(pkgInfo["license"]).mapNotNullTo(declaredLicenses) { license ->
+            license?.textValue()?.removeSuffix(" License")?.takeUnless { it.isBlank() || it == "UNKNOWN" }
         }
 
         // Example license classifier:
         // "License :: OSI Approved :: GNU Library or Lesser General Public License (LGPL)"
         pkgInfo["classifiers"]?.mapNotNullTo(declaredLicenses) {
             val classifier = it.textValue().split(" :: ")
-            if (classifier.first() == "License") {
-                classifier.last().removeSuffix(" License")
-            } else {
-                null
-            }
+            classifier.takeIf { it.first() == "License" }?.last()?.removeSuffix(" License")
         }
 
         return declaredLicenses
@@ -340,7 +382,7 @@ class PIP : PackageManager() {
 
     private fun setupVirtualEnv(workingDir: File, definitionFile: File): File {
         // Create an out-of-tree virtualenv.
-        println("Creating a virtualenv for the '${workingDir.name}' project directory...")
+        log.info { "Creating a virtualenv for the '${workingDir.name}' project directory..." }
         val virtualEnvDir = createTempDir(workingDir.name.padEnd(3, '_'), "virtualenv")
         ProcessCapture(workingDir, "virtualenv", virtualEnvDir.path).requireSuccess()
 
@@ -368,7 +410,7 @@ class PIP : PackageManager() {
         // TODO: Find a way to make installation of packages with native extensions work on Windows where often
         // the appropriate compiler is missing / not set up, e.g. by using pre-built packages from
         // http://www.lfd.uci.edu/~gohlke/pythonlibs/
-        println("Installing dependencies for the '${workingDir.name}' project directory...")
+        log.info { "Installing dependencies for the '${workingDir.name}' project directory..." }
         pip = if (definitionFile.name == "setup.py") {
             // Note that this only installs required "install" dependencies, not "extras" or "tests" dependencies.
             runPipInVirtualEnv(virtualEnvDir, workingDir, "install", ".")
@@ -380,7 +422,7 @@ class PIP : PackageManager() {
         // TODO: Consider logging a warning instead of an error if the command is run on a file that likely belongs
         // to a test.
         with(pip) {
-            if (isError()) {
+            if (isError) {
                 log.error { errorMessage }
             }
         }
@@ -396,7 +438,7 @@ class PIP : PackageManager() {
 
             val pkg = Package(
                     id = Identifier(
-                            provider = "PyPI",
+                            type = "PyPI",
                             namespace = "",
                             name = name,
                             version = version

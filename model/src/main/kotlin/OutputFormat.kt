@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,22 +20,26 @@
 package com.here.ort.model
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 
 import java.io.File
 
 /**
- * An enumeration of supported output file formats and their [fileExtension] (not including the dot).
+ * An enumeration of supported output file formats, their primary [fileExtension], and optional [aliases] (not including
+ * the dot).
  */
-enum class OutputFormat(val fileExtension: String, val mapper: ObjectMapper) {
+enum class OutputFormat(val mapper: ObjectMapper, val fileExtension: String, vararg aliases: String) {
     /**
      * Specifies the [JSON](http://www.json.org/) format.
      */
-    JSON("json", jsonMapper),
+    JSON(jsonMapper, "json"),
 
     /**
      * Specifies the [YAML](http://yaml.org/) format.
      */
-    YAML("yml", yamlMapper);
+    YAML(yamlMapper, "yml", "yaml");
+
+    val fileExtensions = listOf(fileExtension, *aliases)
 }
 
 /**
@@ -44,6 +48,11 @@ enum class OutputFormat(val fileExtension: String, val mapper: ObjectMapper) {
  * @throws IllegalArgumentException If no matching OutputFormat for the [File.extension] can be found.
  */
 fun File.mapper() =
-        OutputFormat.values().find { extension == it.fileExtension }?.mapper ?: throw IllegalArgumentException(
+        OutputFormat.values().find { extension in it.fileExtensions }?.mapper ?: throw IllegalArgumentException(
                 "No matching ObjectMapper found for file extension '$extension' of file '$absolutePath'."
         )
+
+/**
+ * Use the Jackson mapper returned from [File.mapper] to read an object of type [T] from this file.
+ */
+inline fun <reified T : Any> File.readValue(): T = mapper().readValue(this)

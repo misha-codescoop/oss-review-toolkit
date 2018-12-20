@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@
 
 package com.here.ort.model
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
+
 import java.util.SortedSet
 
 /**
@@ -26,6 +29,7 @@ import java.util.SortedSet
  * meta-data like e.g. the [homepageUrl]. Most importantly, it defines the dependency scopes that refer to the actual
  * packages.
  */
+@JsonIgnoreProperties("aliases")
 data class Project(
         /**
          * The unique identifier of this project.
@@ -45,11 +49,6 @@ data class Project(
         val declaredLicenses: SortedSet<String>,
 
         /**
-         * Alternate project names, like abbreviations or code names.
-         */
-        val aliases: List<String>,
-
-        /**
          * Original VCS-related information as defined in the [Project]'s meta-data.
          */
         val vcs: VcsInfo,
@@ -67,17 +66,45 @@ data class Project(
         /**
          * The dependency scopes defined by this project.
          */
-        val scopes: SortedSet<Scope>
-) : CustomData(), Comparable<Project> {
-    fun collectAllDependencies(): SortedSet<Identifier> = sortedSetOf<Identifier>().also { result ->
-        scopes.forEach { result += it.collectAllDependencies() }
+        val scopes: SortedSet<Scope>,
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) : Comparable<Project> {
+    companion object {
+        /**
+         * A constant for a [Project] where all properties are empty.
+         */
+        @JvmField
+        val EMPTY = Project(
+                id = Identifier.EMPTY,
+                definitionFilePath = "",
+                declaredLicenses = sortedSetOf(),
+                vcs = VcsInfo.EMPTY,
+                homepageUrl = "",
+                scopes = sortedSetOf()
+        )
     }
 
     /**
-     * Returns a de-duplicated list of all errors for the provided [id].
+     * Return the set of [PackageReference]s in this [Project], up to and including a depth of [maxDepth] where counting
+     * starts at 0 (for the [Project] itself) and 1 are direct dependencies etc. A value below 0 means to not limit the
+     * depth. If [includeErroneous] is true, [PackageReference]s with errors (but not their dependencies without errors)
+     * are excluded, otherwise they are included.
      */
-    fun collectErrors(id: Identifier): List<String> {
-        val collectedErrors = mutableListOf<String>()
+    fun collectDependencies(maxDepth: Int = -1, includeErroneous: Boolean = true) =
+            scopes.fold(sortedSetOf<PackageReference>()) { refs, scope ->
+                refs.also { it += scope.collectDependencies(maxDepth, includeErroneous) }
+            }
+
+    /**
+     * Return a de-duplicated list of all errors for the provided [id].
+     */
+    fun collectErrors(id: Identifier): List<OrtIssue> {
+        val collectedErrors = mutableListOf<OrtIssue>()
 
         fun addErrors(pkgRef: PackageReference) {
             if (pkgRef.id == id) {
@@ -87,7 +114,11 @@ data class Project(
             pkgRef.dependencies.forEach { addErrors(it) }
         }
 
-        scopes.forEach { it.dependencies.forEach { addErrors(it) } }
+        for (scope in scopes) {
+            for (dependency in scope.dependencies) {
+                addErrors(dependency)
+            }
+        }
 
         return collectedErrors.distinct()
     }
@@ -96,6 +127,11 @@ data class Project(
      * A comparison function to sort projects by their identifier.
      */
     override fun compareTo(other: Project) = id.compareTo(other.id)
+
+    /**
+     * Return all references to [id] as a dependency in this project.
+     */
+    fun findReferences(id: Identifier) = scopes.flatMap { it.findReferences(id) }
 
     /**
      * Return a [Package] representation of this [Project].
@@ -110,20 +146,4 @@ data class Project(
             vcs = vcs,
             vcsProcessed = vcsProcessed
     )
-
-    companion object {
-        /**
-         * A constant for a [Project] where all properties are empty.
-         */
-        @JvmField
-        val EMPTY = Project(
-                id = Identifier.EMPTY,
-                definitionFilePath = "",
-                declaredLicenses = sortedSetOf(),
-                aliases = emptyList(),
-                vcs = VcsInfo.EMPTY,
-                homepageUrl = "",
-                scopes = sortedSetOf()
-        )
-    }
 }

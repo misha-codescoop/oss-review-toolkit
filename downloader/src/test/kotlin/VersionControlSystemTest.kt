@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import io.kotlintest.specs.WordSpec
 import java.io.File
 
 class VersionControlSystemTest : WordSpec({
-    val vcsRoot = File("..").canonicalFile
+    val vcsRoot = File("..").absoluteFile.normalize()
     val relProjDir = File("src/test")
     val absProjDir = relProjDir.absoluteFile
 
@@ -64,8 +64,49 @@ class VersionControlSystemTest : WordSpec({
         }
     }
 
+    "splitUrl" should {
+        "split paths from a URL to a Git repository" {
+            val actual = VersionControlSystem.splitUrl(
+                    "https://git-wip-us.apache.org/repos/asf/zeppelin.git/zeppelin-interpreter"
+            )
+            val expected = VcsInfo(
+                    type = "git",
+                    url = "https://git-wip-us.apache.org/repos/asf/zeppelin.git",
+                    revision = "",
+                    path = "zeppelin-interpreter"
+            )
+            actual shouldBe expected
+        }
+
+        "split the revision from an NPM URL to a Git repository" {
+            val actual = VersionControlSystem.splitUrl(
+                    "git+ssh://sub.domain.com:42/foo-bar#b3b5b3c60dcdc39347b23cf94ab8f577239b7df3"
+            )
+            val expected = VcsInfo(
+                    type = "git",
+                    url = "ssh://sub.domain.com:42/foo-bar",
+                    revision = "b3b5b3c60dcdc39347b23cf94ab8f577239b7df3",
+                    path = ""
+            )
+            actual shouldBe expected
+        }
+
+        "split the revision from a NPM URL to a GitHub repository" {
+            val actual = VersionControlSystem.splitUrl(
+                    "https://github.com/mochajs/mocha.git#5bd33a0ba201d227159759e8ced86756595b0c54"
+            )
+            val expected = VcsInfo(
+                    type = "git",
+                    url = "https://github.com/mochajs/mocha.git",
+                    revision = "5bd33a0ba201d227159759e8ced86756595b0c54",
+                    path = ""
+            )
+            actual shouldBe expected
+        }
+    }
+
     "splitUrl for Bitbucket" should {
-        "not modify URLs without a path".config(enabled = Mercurial.isInPath()) {
+        "not modify URLs without a path".config(enabled = Mercurial().isInPath()) {
             val actual = VersionControlSystem.splitUrl(
                     "https://bitbucket.org/paniq/masagin"
             )

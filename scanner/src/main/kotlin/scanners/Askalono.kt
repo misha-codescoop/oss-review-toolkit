@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,18 +24,21 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 
 import com.here.ort.model.EMPTY_JSON_NODE
+import com.here.ort.model.LicenseFinding
 import com.here.ort.model.Provenance
 import com.here.ort.model.ScanResult
 import com.here.ort.model.ScanSummary
 import com.here.ort.model.ScannerDetails
+import com.here.ort.model.config.ScannerConfiguration
 import com.here.ort.model.yamlMapper
 import com.here.ort.scanner.LocalScanner
-import com.here.ort.scanner.Main
 import com.here.ort.scanner.ScanException
+import com.here.ort.scanner.AbstractScannerFactory
+import com.here.ort.scanner.HTTP_CACHE_PATH
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.OkHttpClientHelper
 import com.here.ort.utils.OS
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.getCommandVersion
 import com.here.ort.utils.log
 
 import java.io.File
@@ -47,26 +50,47 @@ import okhttp3.Request
 
 import okio.Okio
 
-object Askalono : LocalScanner() {
-    private val extension = when {
-        OS.isLinux -> "linux"
-        OS.isMac -> "osx"
-        OS.isWindows -> "exe"
-        else -> throw IllegalArgumentException("Unsupported operating system.")
+class Askalono(config: ScannerConfiguration) : LocalScanner(config) {
+    class Factory : AbstractScannerFactory<Askalono>() {
+        override fun create(config: ScannerConfiguration) = Askalono(config)
     }
 
-    override val scannerExe = "askalono.$extension"
-    override val scannerVersion = "0.2.0"
+    override val scannerVersion = "0.3.0"
     override val resultFileExt = "txt"
 
+    override fun command(workingDir: File?): String {
+        val extension = when {
+            OS.isLinux -> "linux"
+            OS.isMac -> "osx"
+            OS.isWindows -> "exe"
+            else -> throw IllegalArgumentException("Unsupported operating system.")
+        }
+
+        return "askalono.$extension"
+    }
+
+    override fun getVersion(dir: File): String {
+        // Create a temporary tool to get its version from the installation in a specific directory.
+        val cmd = command()
+        val tool = object : CommandLineTool {
+            override fun command(workingDir: File?) = dir.resolve(cmd).absolutePath
+        }
+
+        return tool.getVersion(transform = {
+            // "askalono --version" returns a string like "askalono 0.2.0-beta.1", so simply remove the prefix.
+            it.substringAfter("askalono ")
+        })
+    }
+
     override fun bootstrap(): File {
+        val scannerExe = command()
         val url = "https://github.com/amzn/askalono/releases/download/$scannerVersion/$scannerExe"
 
         log.info { "Downloading $this from '$url'... " }
 
         val request = Request.Builder().get().url(url).build()
 
-        return OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, request).use { response ->
+        return OkHttpClientHelper.execute(HTTP_CACHE_PATH, request).use { response ->
             val body = response.body()
 
             if (response.code() != HttpURLConnection.HTTP_OK || body == null) {
@@ -94,29 +118,23 @@ object Askalono : LocalScanner() {
 
     override fun getConfiguration() = ""
 
-    override fun getVersion(dir: File) =
-            getCommandVersion(dir.resolve(scannerExe).canonicalPath, transform = {
-                // "askalono --version" returns a string like "askalono 0.2.0-beta.1", so simply remove the prefix.
-                it.substringAfter("askalono ")
-            })
-
     override fun scanPath(scannerDetails: ScannerDetails, path: File, provenance: Provenance, resultsFile: File)
             : ScanResult {
         val startTime = Instant.now()
 
         val process = ProcessCapture(
-                scannerPath.canonicalPath,
-                "crawl", path.canonicalPath
+                scannerPath.absolutePath,
+                "crawl", path.absolutePath
         )
 
         val endTime = Instant.now()
 
-        if (process.stderr().isNotBlank()) {
-            log.debug { process.stderr() }
+        if (process.stderr.isNotBlank()) {
+            log.debug { process.stderr }
         }
 
         with(process) {
-            if (isSuccess()) {
+            if (isSuccess) {
                 stdoutFile.copyTo(resultsFile)
                 val result = getResult(resultsFile)
                 val summary = generateSummary(startTime, endTime, result)
@@ -140,7 +158,7 @@ object Askalono : LocalScanner() {
     }
 
     override fun generateSummary(startTime: Instant, endTime: Instant, result: JsonNode): ScanSummary {
-        val licenses = result.map { it["License"].textValue() }
-        return ScanSummary(startTime, endTime, result.size(), licenses.toSortedSet(), errors = sortedSetOf())
+        val findings = result.map { LicenseFinding(it["License"].textValue()) }.toSortedSet()
+        return ScanSummary(startTime, endTime, result.size(), findings, errors = mutableListOf())
     }
 }

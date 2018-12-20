@@ -1,10 +1,8 @@
 ---
-allow_dynamic_versions: true
 project:
   id: "PIP::example-python-flask:0773991e36a4c69b121cdb05146d6140347d4065"
   definition_file_path: "requirements.txt"
   declared_licenses: []
-  aliases: []
   vcs:
     type: ""
     url: ""
@@ -18,29 +16,16 @@ project:
   homepage_url: ""
   scopes:
   - name: "install"
-    delivered: true
     dependencies:
     - id: "PyPI::Flask:0.12"
       dependencies:
       - id: "PyPI::Jinja2:2.8.1"
         dependencies:
-        - id: "PyPI::MarkupSafe:1.0"
-          dependencies: []
-          errors: []
-        errors: []
+        - id: "PyPI::MarkupSafe:1.1.0"
       - id: "PyPI::Werkzeug:0.14.1"
-        dependencies: []
-        errors: []
-      - id: "PyPI::click:6.7"
-        dependencies: []
-        errors: []
-      - id: "PyPI::itsdangerous:0.24"
-        dependencies: []
-        errors: []
-      errors: []
+      - id: "PyPI::click:7.0"
+      - id: "PyPI::itsdangerous:1.1.0"
     - id: "PyPI::gunicorn:19.6.0"
-      dependencies: []
-      errors: []
 packages:
 - package:
     id: "PyPI::Flask:0.12"
@@ -94,18 +79,18 @@ packages:
       path: ""
   curations: []
 - package:
-    id: "PyPI::MarkupSafe:1.0"
+    id: "PyPI::MarkupSafe:1.1.0"
     declared_licenses:
     - "BSD"
-    description: "Implements a XML/HTML/XHTML Markup safe string for Python"
-    homepage_url: "http://github.com/pallets/markupsafe"
+    description: "Safely add untrusted strings to HTML/XML markup."
+    homepage_url: "https://www.palletsprojects.com/p/markupsafe/"
     binary_artifact:
-      url: "https://files.pythonhosted.org/packages/4d/de/32d741db316d8fdb7680822dd37001ef7a448255de9699ab4bfcbdf4172b/MarkupSafe-1.0.tar.gz"
-      hash: "2fcedc9284d50e577b5192e8e3578355"
+      url: "https://files.pythonhosted.org/packages/cd/52/927263d9cf66a12e05c5caef43ee203bd92355e9a321552d2b8c4aee5f1e/MarkupSafe-1.1.0-cp27-cp27m-macosx_10_6_intel.whl"
+      hash: "1036109e132252719b1dbe9594aef1ae"
       hash_algorithm: "MD5"
     source_artifact:
-      url: "https://files.pythonhosted.org/packages/4d/de/32d741db316d8fdb7680822dd37001ef7a448255de9699ab4bfcbdf4172b/MarkupSafe-1.0.tar.gz"
-      hash: "2fcedc9284d50e577b5192e8e3578355"
+      url: "https://files.pythonhosted.org/packages/ac/7e/1b4c2e05809a4414ebce0892fe1e32c14ace86ca7d50c70f00979ca9b3a3/MarkupSafe-1.1.0.tar.gz"
+      hash: "49e3f3230cedb7ae34faf06913db83fc"
       hash_algorithm: "MD5"
     vcs:
       type: ""
@@ -113,8 +98,8 @@ packages:
       revision: ""
       path: ""
     vcs_processed:
-      type: "git"
-      url: "https://github.com/pallets/markupsafe.git"
+      type: ""
+      url: ""
       revision: ""
       path: ""
   curations: []
@@ -144,18 +129,18 @@ packages:
       path: ""
   curations: []
 - package:
-    id: "PyPI::click:6.7"
+    id: "PyPI::click:7.0"
     declared_licenses:
     - "BSD"
-    description: "A simple wrapper around optparse for powerful command line utilities."
-    homepage_url: "http://github.com/mitsuhiko/click"
+    description: "Composable command line interface toolkit"
+    homepage_url: "https://palletsprojects.com/p/click/"
     binary_artifact:
-      url: "https://files.pythonhosted.org/packages/34/c1/8806f99713ddb993c5366c362b2f908f18269f8d792aff1abfd700775a77/click-6.7-py2.py3-none-any.whl"
-      hash: "5e7a4e296b3212da2ff11017675d7a4d"
+      url: "https://files.pythonhosted.org/packages/fa/37/45185cb5abbc30d7257104c434fe0b07e5a195a6847506c074527aa599ec/Click-7.0-py2.py3-none-any.whl"
+      hash: "4de489e31c57834a21b8be7111dab613"
       hash_algorithm: "MD5"
     source_artifact:
-      url: "https://files.pythonhosted.org/packages/95/d9/c3336b6b5711c3ab9d1d3a80f1a3e2afeb9d8c02a7166462f6cc96570897/click-6.7.tar.gz"
-      hash: "fc4cc00c4863833230d3af92af48abd4"
+      url: "https://files.pythonhosted.org/packages/f8/5c/f60e9d8a1e77005f664b76ff8aeaee5bc05d0a91798afd7f53fc998dbc47/Click-7.0.tar.gz"
+      hash: "7f53d50f7b7373ebc7963f9ff697450a"
       hash_algorithm: "MD5"
     vcs:
       type: ""
@@ -163,8 +148,8 @@ packages:
       revision: ""
       path: ""
     vcs_processed:
-      type: "git"
-      url: "https://github.com/mitsuhiko/click.git"
+      type: ""
+      url: ""
       revision: ""
       path: ""
   curations: []
@@ -194,19 +179,18 @@ packages:
       path: ""
   curations: []
 - package:
-    id: "PyPI::itsdangerous:0.24"
+    id: "PyPI::itsdangerous:1.1.0"
     declared_licenses:
     - "BSD"
-    description: "Various helpers to pass trusted data to untrusted environments and\
-      \ back."
-    homepage_url: "http://github.com/mitsuhiko/itsdangerous"
+    description: "Various helpers to pass data to untrusted environments and back."
+    homepage_url: "https://palletsprojects.com/p/itsdangerous/"
     binary_artifact:
-      url: "https://files.pythonhosted.org/packages/dc/b4/a60bcdba945c00f6d608d8975131ab3f25b22f2bcfe1dab221165194b2d4/itsdangerous-0.24.tar.gz"
-      hash: "a3d55aa79369aef5345c036a8a26307f"
+      url: "https://files.pythonhosted.org/packages/76/ae/44b03b253d6fade317f32c24d100b3b35c2239807046a4c953c7b89fa49e/itsdangerous-1.1.0-py2.py3-none-any.whl"
+      hash: "55179072b7f84ae38f16b3fdca33aa4f"
       hash_algorithm: "MD5"
     source_artifact:
-      url: "https://files.pythonhosted.org/packages/dc/b4/a60bcdba945c00f6d608d8975131ab3f25b22f2bcfe1dab221165194b2d4/itsdangerous-0.24.tar.gz"
-      hash: "a3d55aa79369aef5345c036a8a26307f"
+      url: "https://files.pythonhosted.org/packages/68/1a/f27de07a8a304ad5fa817bbe383d1238ac4396da447fa11ed937039fa04b/itsdangerous-1.1.0.tar.gz"
+      hash: "9b7f5afa7f1e3acfb7786eeca3d99307"
       hash_algorithm: "MD5"
     vcs:
       type: ""
@@ -214,9 +198,8 @@ packages:
       revision: ""
       path: ""
     vcs_processed:
-      type: "git"
-      url: "https://github.com/mitsuhiko/itsdangerous.git"
+      type: ""
+      url: ""
       revision: ""
       path: ""
   curations: []
-errors: []

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,10 @@
 package com.here.ort.scanner
 
 import com.here.ort.model.EMPTY_JSON_NODE
+import com.here.ort.model.OrtIssue
 import com.here.ort.model.HashAlgorithm
 import com.here.ort.model.Identifier
+import com.here.ort.model.LicenseFinding
 import com.here.ort.model.Package
 import com.here.ort.model.Provenance
 import com.here.ort.model.RemoteArtifact
@@ -36,8 +38,8 @@ import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpServer
 
 import io.kotlintest.Description
+import io.kotlintest.Spec
 import io.kotlintest.specs.StringSpec
-import io.kotlintest.TestResult
 import io.kotlintest.matchers.collections.contain
 import io.kotlintest.should
 import io.kotlintest.shouldBe
@@ -48,13 +50,13 @@ import java.net.InetSocketAddress
 import java.time.Duration
 import java.time.Instant
 
+import kotlin.random.Random
+
 class HttpCacheTest : StringSpec() {
     private val loopback = InetAddress.getLoopbackAddress()
-    private val port = 8888
+    private val port = Random.nextInt(1024, 49152) // See https://en.wikipedia.org/wiki/Registered_port.
 
-    private lateinit var server: HttpServer
-
-    private class MyHttpHandler : HttpHandler {
+    private val handler = object : HttpHandler {
         val requests = mutableMapOf<String, String>()
 
         override fun handle(exchange: HttpExchange) {
@@ -71,19 +73,13 @@ class HttpCacheTest : StringSpec() {
         }
     }
 
-    override fun beforeTest(description: Description) {
-        // Start the local HTTP server.
-        server = HttpServer.create(InetSocketAddress(loopback, port), 0)
-        server.createContext("/", MyHttpHandler())
-        server.start()
+    // Start the local HTTP server with the system default value for queued incoming connections.
+    private val server = HttpServer.create(InetSocketAddress(loopback, port), 0).apply {
+        createContext("/", handler)
+        start()
     }
 
-    override fun afterTest(description: Description, result: TestResult) {
-        // Ensure the server is properly stopped even in case of exceptions.
-        server.stop(0)
-    }
-
-    private val id = Identifier("provider", "namespace", "name", "version")
+    private val id = Identifier("type", "namespace", "name", "version")
 
     private val sourceArtifact = RemoteArtifact(
             "url",
@@ -131,23 +127,42 @@ class HttpCacheTest : StringSpec() {
     private val scannerStartTime2 = downloadTime2 + Duration.ofMinutes(1)
     private val scannerEndTime2 = scannerStartTime2 + Duration.ofMinutes(1)
 
+    private val error1 = OrtIssue(source = "source-1", message = "error-1")
+    private val error2 = OrtIssue(source = "source-2", message = "error-2")
+
     private val scanSummaryWithFiles = ScanSummary(
             scannerStartTime1,
             scannerEndTime1,
             1,
-            sortedSetOf("license 1.1", "license 1.2"),
-            sortedSetOf("error 1.1", "error 1.2")
+            sortedSetOf(
+                    LicenseFinding("license 1.1", sortedSetOf()),
+                    LicenseFinding("license 1.2", sortedSetOf())
+            ),
+            mutableListOf(error1, error2)
     )
     private val scanSummaryWithoutFiles = ScanSummary(
             scannerStartTime2,
             scannerEndTime2,
             0,
             sortedSetOf(),
-            sortedSetOf()
+            mutableListOf()
     )
 
     private val rawResultWithContent = jsonMapper.readTree("\"key 1\": \"value 1\"")
     private val rawResultEmpty = EMPTY_JSON_NODE
+
+    override fun beforeTest(description: Description) {
+        handler.requests.clear()
+
+        super.beforeTest(description)
+    }
+
+    override fun afterSpec(description: Description, spec: Spec) {
+        // Ensure the server is properly stopped even in case of exceptions, but wait at most 5 seconds.
+        server.stop(5)
+
+        super.afterSpec(description, spec)
+    }
 
     init {
         "Scan result can be added to the cache" {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,57 +19,50 @@
 
 package com.here.ort.model
 
+import com.fasterxml.jackson.module.kotlin.readValue
+
 import io.kotlintest.shouldBe
 import io.kotlintest.specs.WordSpec
 
 class AnalyzerResultTest : WordSpec() {
-    private val vcs = VcsInfo("type", "url", "revision", "resolvedRevision", "path")
-
-    private val package1 = Package.EMPTY.copy(id = Identifier("provider-1", "namespace-1", "package-1", "version-1"))
-    private val package2 = Package.EMPTY.copy(id = Identifier("provider-2", "namespace-2", "package-2", "version-2"))
-    private val package3 = Package.EMPTY.copy(id = Identifier("provider-3", "namespace-3", "package-3", "version-3"))
+    private val package1 = Package.EMPTY.copy(id = Identifier("type-1", "namespace-1", "package-1", "version-1"))
+    private val package2 = Package.EMPTY.copy(id = Identifier("type-2", "namespace-2", "package-2", "version-2"))
+    private val package3 = Package.EMPTY.copy(id = Identifier("type-3", "namespace-3", "package-3", "version-3"))
 
     private val pkgRef1 = package1.toReference()
-    private val pkgRef2 = package2.toReference(sortedSetOf(package3.toReference()))
+    private val pkgRef2 = package2.toReference(dependencies = sortedSetOf(package3.toReference()))
 
-    private val scope1 = Scope("scope-1", true, sortedSetOf(pkgRef1))
-    private val scope2 = Scope("scope-2", true, sortedSetOf(pkgRef2))
+    private val scope1 = Scope("scope-1", sortedSetOf(pkgRef1))
+    private val scope2 = Scope("scope-2", sortedSetOf(pkgRef2))
 
     private val project1 = Project.EMPTY.copy(
-            id = Identifier("provider-1", "namespace-1", "project-1", "version-1"),
+            id = Identifier("type-1", "namespace-1", "project-1", "version-1"),
             scopes = sortedSetOf(scope1)
     )
     private val project2 = Project.EMPTY.copy(
-            id = Identifier("provider-2", "namespace-2", "project-2", "version-2"),
+            id = Identifier("type-2", "namespace-2", "project-2", "version-2"),
             scopes = sortedSetOf(scope1, scope2)
     )
 
-    private val analyzerResult1 = ProjectAnalyzerResult(true, project1, sortedSetOf(package1.toCuratedPackage()),
-            listOf("error-1", "error-2"))
-    private val analyzerResult2 = ProjectAnalyzerResult(true, project2,
+    private val error1 = OrtIssue(source = "source-1", message = "message-1")
+    private val error2 = OrtIssue(source = "source-2", message = "message-2")
+
+    private val analyzerResult1 = ProjectAnalyzerResult(project1, sortedSetOf(package1.toCuratedPackage()),
+            listOf(error1, error2))
+    private val analyzerResult2 = ProjectAnalyzerResult(project2,
             sortedSetOf(package1.toCuratedPackage(), package2.toCuratedPackage(), package3.toCuratedPackage()),
-            listOf("error-2"))
+            listOf(error2))
 
     init {
         "AnalyzerResult" should {
-            "create the correct ProjectAnalyzerResults" {
-                val mergedResults = AnalyzerResultBuilder(true, vcs)
-                        .addResult(analyzerResult1)
-                        .addResult(analyzerResult2)
-                        .build()
-
-                mergedResults.createProjectAnalyzerResults() shouldBe listOf(analyzerResult1, analyzerResult2)
-            }
-
             "be serialized and deserialized correctly" {
-                val mergedResults = AnalyzerResultBuilder(true, vcs)
+                val mergedResults = AnalyzerResultBuilder()
                         .addResult(analyzerResult1)
                         .addResult(analyzerResult2)
                         .build()
 
                 val serializedMergedResults = yamlMapper.writeValueAsString(mergedResults)
-                val deserializedMergedResults =
-                        yamlMapper.readValue(serializedMergedResults, AnalyzerResult::class.java)
+                val deserializedMergedResults = yamlMapper.readValue<AnalyzerResult>(serializedMergedResults)
 
                 deserializedMergedResults shouldBe mergedResults
             }
@@ -77,14 +70,11 @@ class AnalyzerResultTest : WordSpec() {
 
         "AnalyzerResultBuilder" should {
             "merge results from all files" {
-                val mergedResults = AnalyzerResultBuilder(true, vcs)
+                val mergedResults = AnalyzerResultBuilder()
                         .addResult(analyzerResult1)
                         .addResult(analyzerResult2)
                         .build()
 
-                mergedResults.allowDynamicVersions shouldBe true
-                mergedResults.vcs shouldBe vcs
-                mergedResults.vcsProcessed shouldBe vcs.normalize()
                 mergedResults.projects shouldBe sortedSetOf(project1, project2)
                 mergedResults.packages shouldBe sortedSetOf(package1.toCuratedPackage(), package2.toCuratedPackage(),
                         package3.toCuratedPackage())

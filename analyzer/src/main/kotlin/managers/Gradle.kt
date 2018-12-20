@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,10 @@ import ch.frankel.slf4k.*
 
 import com.here.ort.analyzer.MavenSupport
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.AbstractPackageManagerFactory
 import com.here.ort.analyzer.identifier
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.model.OrtIssue
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
 import com.here.ort.model.PackageReference
@@ -37,8 +38,9 @@ import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.Scope
 import com.here.ort.model.VcsInfo
-import com.here.ort.utils.OS
-import com.here.ort.utils.collectMessages
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
+import com.here.ort.utils.collectMessagesAsString
 import com.here.ort.utils.log
 import com.here.ort.utils.showStackTrace
 
@@ -46,49 +48,67 @@ import java.io.File
 
 import org.apache.maven.project.ProjectBuildingException
 
-import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.artifact.DefaultArtifact
-import org.eclipse.aether.metadata.Metadata
-import org.eclipse.aether.repository.LocalArtifactRegistration
-import org.eclipse.aether.repository.LocalArtifactRequest
-import org.eclipse.aether.repository.LocalArtifactResult
-import org.eclipse.aether.repository.LocalMetadataRegistration
-import org.eclipse.aether.repository.LocalMetadataRequest
-import org.eclipse.aether.repository.LocalMetadataResult
-import org.eclipse.aether.repository.LocalRepository
-import org.eclipse.aether.repository.LocalRepositoryManager
 import org.eclipse.aether.repository.RemoteRepository
+import org.eclipse.aether.repository.WorkspaceReader
+import org.eclipse.aether.repository.WorkspaceRepository
 
 import org.gradle.tooling.GradleConnector
 
-class Gradle : PackageManager() {
-    companion object : PackageManagerFactory<Gradle>(
-            "https://gradle.org/",
-            "Java",
-            listOf("build.gradle", "settings.gradle")
-    ) {
-        override fun create() = Gradle()
+/**
+ * The Gradle package manager for Java, see https://gradle.org/.
+ */
+class Gradle(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig) {
+    class Factory : AbstractPackageManagerFactory<Gradle>() {
+        override val globsForDefinitionFiles = listOf("build.gradle", "settings.gradle")
 
-        val gradle = if (OS.isWindows) "gradle.bat" else "gradle"
-        val wrapper = if (OS.isWindows) "gradlew.bat" else "gradlew"
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                Gradle(analyzerConfig, repoConfig)
     }
 
-    val maven = MavenSupport { localRepositoryManager ->
-        GradleLocalRepositoryManager(localRepositoryManager)
+    /**
+     * A workspace reader that is backed by the local Gradle artifact cache.
+     */
+    private class GradleCacheReader : WorkspaceReader {
+        private val workspaceRepository = WorkspaceRepository("gradleCache")
+        private val gradleCacheRoot = File(System.getProperty("user.home"), ".gradle/caches/modules-2/files-2.1")
+
+        override fun findArtifact(artifact: Artifact): File? {
+            val artifactRootDir = File(gradleCacheRoot,
+                    "${artifact.groupId}/${artifact.artifactId}/${artifact.version}")
+
+            val artifactFile = artifactRootDir.walkTopDown().find {
+                val classifier = if (artifact.classifier.isNullOrBlank()) "" else "${artifact.classifier}-"
+                it.isFile && it.name == "${artifact.artifactId}-$classifier${artifact.version}.${artifact.extension}"
+            }
+
+            log.debug {
+                "Gradle cache result for '${artifact.identifier()}:${artifact.classifier}:${artifact.extension}': " +
+                        artifactFile?.invariantSeparatorsPath
+            }
+
+            return artifactFile
+        }
+
+        override fun findVersions(artifact: Artifact) =
+                // Do not resolve versions of already locally available artifacts. This also ensures version resolution
+                // was done by Gradle.
+                if (findArtifact(artifact)?.isFile == true) listOf(artifact.version) else emptyList()
+
+        override fun getRepository() = workspaceRepository
     }
 
-    override fun command(workingDir: File) = if (File(workingDir, wrapper).isFile) wrapper else gradle
-
-    override fun toString() = Gradle.toString()
+    private val maven = MavenSupport(GradleCacheReader())
 
     override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
-        val connection = GradleConnector
+        val gradleConnection = GradleConnector
                 .newConnector()
                 .forProjectDirectory(definitionFile.parentFile)
                 .connect()
 
-        try {
+        gradleConnection.use { connection ->
             val initScriptFile = File.createTempFile("init", ".gradle")
             initScriptFile.writeBytes(javaClass.classLoader.getResource("init.gradle").readBytes())
 
@@ -116,35 +136,36 @@ class Gradle : PackageManager() {
                     parseDependency(dependency, packages, repositories)
                 }
 
-                Scope(configuration.name, true, dependencies.toSortedSet())
+                Scope(configuration.name, dependencies.toSortedSet())
             }
 
             val project = Project(
                     id = Identifier(
-                            provider = toString(),
+                            type = toString(),
                             namespace = dependencyTreeModel.group,
                             name = dependencyTreeModel.name,
                             version = dependencyTreeModel.version
                     ),
-                    definitionFilePath = VersionControlSystem.getPathToRoot(definitionFile) ?: "",
+                    definitionFilePath = VersionControlSystem.getPathInfo(definitionFile).path,
                     declaredLicenses = sortedSetOf(),
-                    aliases = emptyList(),
                     vcs = VcsInfo.EMPTY,
                     vcsProcessed = processProjectVcs(definitionFile.parentFile),
                     homepageUrl = "",
                     scopes = scopes.toSortedSet()
             )
 
-            return ProjectAnalyzerResult(true, project,
-                    packages.values.map { it.toCuratedPackage() }.toSortedSet(), dependencyTreeModel.errors)
-        } finally {
-            connection.close()
+            val errors = dependencyTreeModel.errors.map {
+                OrtIssue(source = toString(), message = it)
+            }
+
+            return ProjectAnalyzerResult(project, packages.values.map { it.toCuratedPackage() }.toSortedSet(), errors)
         }
     }
 
     private fun parseDependency(dependency: Dependency, packages: MutableMap<String, Package>,
                                 repositories: List<RemoteRepository>): PackageReference {
-        val errors = dependency.error?.let { mutableListOf(it) } ?: mutableListOf()
+        val errors = dependency.error?.let { mutableListOf(OrtIssue(source = toString(), message = it)) }
+                ?: mutableListOf()
 
         // Only look for a package when there was no error resolving the dependency.
         if (dependency.error == null) {
@@ -153,7 +174,7 @@ class Gradle : PackageManager() {
             val rawPackage by lazy {
                 Package(
                         id = Identifier(
-                                provider = Maven.toString(),
+                                type = "Maven",
                                 namespace = dependency.groupId,
                                 name = dependency.artifactId,
                                 version = dependency.version
@@ -180,7 +201,7 @@ class Gradle : PackageManager() {
                             "Could not get package information for dependency '$identifier': ${e.message}"
                         }
 
-                        errors += e.collectMessages()
+                        errors += OrtIssue(source = toString(), message = e.collectMessagesAsString())
 
                         rawPackage
                     }
@@ -194,74 +215,7 @@ class Gradle : PackageManager() {
         }
 
         val transitiveDependencies = dependency.dependencies.map { parseDependency(it, packages, repositories) }
-        return PackageReference(Identifier(Maven.toString(), dependency.groupId, dependency.artifactId,
-                dependency.version), transitiveDependencies.toSortedSet(), errors)
-    }
-
-    /**
-     * An implementation of [LocalRepositoryManager] that provides artifacts from the Gradle cache. This is required
-     * to parse POM files from the Gradle cache, because Maven needs to be able to resolve parent POMs. Once the POM
-     * has been parsed correctly all dependencies required to build the project model can be resolved by Maven using
-     * the local repository.
-     */
-    private class GradleLocalRepositoryManager(private val localRepositoryManager: LocalRepositoryManager)
-        : LocalRepositoryManager {
-
-        private val gradleCacheRoot = File(System.getProperty("user.home"), ".gradle/caches/modules-2/files-2.1")
-
-        override fun add(session: RepositorySystemSession, request: LocalArtifactRegistration) =
-                localRepositoryManager.add(session, request)
-
-        override fun add(session: RepositorySystemSession, request: LocalMetadataRegistration) =
-                localRepositoryManager.add(session, request)
-
-        override fun find(session: RepositorySystemSession, request: LocalArtifactRequest): LocalArtifactResult {
-            log.debug { "Request to find local artifact: $request" }
-
-            val file = findArtifactInGradleCache(request.artifact)
-
-            if (file != null && file.isFile) {
-                return LocalArtifactResult(request).apply {
-                    this.file = file
-                    isAvailable = true
-                }
-            }
-
-            return localRepositoryManager.find(session, request)
-        }
-
-        override fun find(session: RepositorySystemSession, request: LocalMetadataRequest): LocalMetadataResult =
-                localRepositoryManager.find(session, request)
-
-        override fun getPathForLocalArtifact(artifact: Artifact): String =
-                localRepositoryManager.getPathForLocalArtifact(artifact)
-
-        override fun getPathForLocalMetadata(metadata: Metadata): String =
-                localRepositoryManager.getPathForLocalMetadata(metadata)
-
-        override fun getPathForRemoteArtifact(artifact: Artifact, repository: RemoteRepository, context: String)
-                : String = localRepositoryManager.getPathForRemoteArtifact(artifact, repository, context)
-
-        override fun getPathForRemoteMetadata(metadata: Metadata, repository: RemoteRepository, context: String)
-                : String = localRepositoryManager.getPathForRemoteMetadata(metadata, repository, context)
-
-        override fun getRepository(): LocalRepository = localRepositoryManager.repository
-
-        private fun findArtifactInGradleCache(artifact: Artifact): File? {
-            val artifactRootDir = File(gradleCacheRoot,
-                    "${artifact.groupId}/${artifact.artifactId}/${artifact.version}")
-
-            val pomFile = artifactRootDir.walkTopDown().find {
-                val classifier = if (artifact.classifier.isNullOrBlank()) "" else "${artifact.classifier}-"
-                it.isFile && it.name == "${artifact.artifactId}-$classifier${artifact.version}.${artifact.extension}"
-            }
-
-            log.debug {
-                "Gradle cache result for '${artifact.identifier()}:${artifact.classifier}:${artifact.extension}': " +
-                        pomFile?.absolutePath
-            }
-
-            return pomFile
-        }
+        val id = Identifier("Maven", dependency.groupId, dependency.artifactId, dependency.version)
+        return PackageReference(id, dependencies = transitiveDependencies.toSortedSet(), errors = errors)
     }
 }

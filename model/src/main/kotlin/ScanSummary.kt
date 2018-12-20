@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@
 package com.here.ort.model
 
 import com.fasterxml.jackson.annotation.JsonAlias
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonInclude
 
 import java.time.Instant
 import java.util.SortedSet
@@ -47,12 +49,26 @@ data class ScanSummary(
         val fileCount: Int,
 
         /**
-         * A list of licenses detected by the scanner.
+         * The licenses associated to their respective copyrights, if any.
          */
-        val licenses: SortedSet<String>,
+        @JsonAlias("licenses")
+        val licenseFindings: SortedSet<LicenseFinding>,
 
         /**
-         * A list of errors that occured during the scan.
+         * The list of errors that occurred during the scan.
          */
-        val errors: SortedSet<String>
-)
+        // Do not serialize if empty to reduce the size of the result file. If there are no errors at all,
+        // [ScanRecord.hasErrors] already contains that information.
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val errors: List<OrtIssue> = emptyList()
+) {
+    @get:JsonIgnore
+    val licenseFindingsMap = sortedMapOf<String, SortedSet<String>>().also {
+        licenseFindings.forEach { finding ->
+            it.getOrPut(finding.license) { sortedSetOf() } += finding.copyrights
+        }
+    }
+
+    @get:JsonIgnore
+    val licenses = licenseFindingsMap.keys
+}

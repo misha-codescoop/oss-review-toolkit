@@ -1,13 +1,31 @@
 // Apply core plugins.
-apply plugin: 'application'
+apply plugin: 'java-library'
 
-applicationName = 'reporter'
-mainClassName = 'com.here.ort.reporter.Main'
+sourceSets {
+    main {
+        output.dir("$buildDir/generated-resources/main", builtBy: 'copyWebAppTemplate')
+    }
+}
+
+task copyWebAppTemplate(type: Copy, dependsOn: ':reporter-web-app:yarnBuild') {
+    from(project(':reporter-web-app').file('build')) {
+        include 'scan-report-template.html'
+    }
+
+    into "$buildDir/generated-resources/main"
+}
 
 dependencies {
-    compile project(':model')
+    api project(':model')
 
-    compile "com.beust:jcommander:$jcommanderVersion"
-    compile 'org.apache.poi:ooxml-schemas:1.3'
-    compile 'org.apache.poi:poi-ooxml:3.17'
+    implementation project(':utils')
+
+    implementation "org.apache.poi:ooxml-schemas:$apachePoiSchemasVersion"
+    implementation "org.apache.poi:poi-ooxml:$apachePoiVersion"
+
+    implementation "org.jetbrains.kotlinx:kotlinx-html-jvm:$kotlinxHtmlVersion"
+
+    // This is required to not depend on the version of Apache Xalan bundled with the JDK. Otherwise the formatting of
+    // the HTML generated in StaticHtmlReporter is slightly different with different Java versions.
+    implementation "xalan:xalan:$xalanVersion"
 }

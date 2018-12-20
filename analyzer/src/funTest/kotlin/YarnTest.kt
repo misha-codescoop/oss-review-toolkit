@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.yamlMapper
 import com.here.ort.utils.normalizeVcsUrl
 import com.here.ort.utils.safeDeleteRecursively
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.DEFAULT_REPOSITORY_CONFIGURATION
 import com.here.ort.utils.test.USER_DIR
 import com.here.ort.utils.test.patchExpectedResult
 
@@ -48,7 +50,7 @@ class YarnTest : WordSpec() {
                 val nodeModulesDir = File(it, "node_modules")
                 val gitKeepFile = File(nodeModulesDir, ".gitkeep")
                 if (nodeModulesDir.isDirectory && !gitKeepFile.isFile) {
-                    nodeModulesDir.safeDeleteRecursively()
+                    nodeModulesDir.safeDeleteRecursively(force = true)
                 }
             }
         }
@@ -58,9 +60,8 @@ class YarnTest : WordSpec() {
         "yarn" should {
             "resolve dependencies correctly" {
                 val packageFile = File(projectDir, "package.json")
-                val yarn = Yarn.create()
-
-                val result = yarn.resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+                val result = Yarn(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                        .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
                 val vcsPath = vcsDir.getPathToRoot(projectDir)
                 val expectedResult = patchExpectedResult(
                         File(projectDir.parentFile, "yarn-expected-output.yml"),

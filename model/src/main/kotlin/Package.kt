@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,10 @@
  */
 
 package com.here.ort.model
+
+import com.fasterxml.jackson.annotation.JsonInclude
+
+import com.here.ort.spdx.SpdxExpression
 
 import java.util.SortedSet
 
@@ -41,6 +45,15 @@ data class Package(
          * licenses as detected by a scanner. Both need to be taken into account for any conclusions.
          */
         val declaredLicenses: SortedSet<String>,
+
+        /**
+         * The concluded license as an [SpdxExpression]. It can be used to correct the license of a package in case the
+         * [declaredLicenses] found in the packages metadata or the licenses detected by a scanner do not match reality.
+         *
+         * ORT itself does not set this field, it needs to be set by the user using a [PackageCuration].
+         */
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        val concludedLicense: SpdxExpression? = null,
 
         /**
          * The description of the package, as provided by the package manager.
@@ -70,8 +83,30 @@ data class Package(
         /**
          * Processed VCS-related information about the [Package] that has e.g. common mistakes corrected.
          */
-        val vcsProcessed: VcsInfo = vcs.normalize()
-) : CustomData(), Comparable<Package> {
+        val vcsProcessed: VcsInfo = vcs.normalize(),
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) : Comparable<Package> {
+    companion object {
+        /**
+         * A constant for a [Package] where all properties are empty.
+         */
+        @JvmField
+        val EMPTY = Package(
+                id = Identifier.EMPTY,
+                declaredLicenses = sortedSetOf(),
+                description = "",
+                homepageUrl = "",
+                binaryArtifact = RemoteArtifact.EMPTY,
+                sourceArtifact = RemoteArtifact.EMPTY,
+                vcs = VcsInfo.EMPTY
+        )
+    }
+
     /**
      * A comparison function to sort packages by their identifier.
      */
@@ -101,25 +136,27 @@ data class Package(
     fun toCuratedPackage() = CuratedPackage(this, emptyList())
 
     /**
-     * Return a template [PackageReference] to refer to this [Package]. It is only a template because e.g. the
-     * dependencies still need to be filled out.
+     * Return a [PackageReference] to refer to this [Package] with optional [dependencies] and [errors].
      */
-    fun toReference(dependencies: SortedSet<PackageReference> = sortedSetOf()) =
-            PackageReference(id, dependencies)
+    fun toReference(
+            linkage: PackageLinkage? = null,
+            dependencies: SortedSet<PackageReference>? = null,
+            errors: List<OrtIssue>? = null
+    ): PackageReference {
+        var ref = PackageReference(id)
 
-    companion object {
-        /**
-         * A constant for a [Package] where all properties are empty.
-         */
-        @JvmField
-        val EMPTY = Package(
-                id = Identifier.EMPTY,
-                declaredLicenses = sortedSetOf(),
-                description = "",
-                homepageUrl = "",
-                binaryArtifact = RemoteArtifact.EMPTY,
-                sourceArtifact = RemoteArtifact.EMPTY,
-                vcs = VcsInfo.EMPTY
-        )
+        if (linkage != null) {
+            ref = ref.copy(linkage = linkage)
+        }
+
+        if (dependencies != null) {
+            ref = ref.copy(dependencies = dependencies)
+        }
+
+        if (errors != null) {
+            ref = ref.copy(errors = errors)
+        }
+
+        return ref
     }
 }

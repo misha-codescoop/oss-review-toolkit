@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,14 +44,14 @@ class DownloaderTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
         "Downloads and unpacks JAR source package".config(tags = setOf(ExpensiveTag)) {
             val pkg = Package(
                     id = Identifier(
-                            provider = "Maven",
+                            type = "Maven",
                             namespace = "junit",
                             name = "junit",
                             version = "4.12"
@@ -68,7 +68,7 @@ class DownloaderTest : StringSpec() {
                     vcs = VcsInfo.EMPTY
             )
 
-            val downloadResult = Main.download(pkg, outputDir)
+            val downloadResult = Downloader().download(pkg, outputDir)
             downloadResult.vcsInfo shouldBe null
             downloadResult.sourceArtifact shouldNotBe null
             downloadResult.sourceArtifact!!.url shouldBe pkg.sourceArtifact.url
@@ -85,7 +85,7 @@ class DownloaderTest : StringSpec() {
         "Download of JAR source package fails when hash is incorrect".config(tags = setOf(ExpensiveTag)) {
             val pkg = Package(
                     id = Identifier(
-                            provider = "Maven",
+                            type = "Maven",
                             namespace = "junit",
                             name = "junit",
                             version = "4.12"
@@ -103,7 +103,7 @@ class DownloaderTest : StringSpec() {
             )
 
             val exception = shouldThrow<DownloadException> {
-                Main.download(pkg, outputDir)
+                Downloader().download(pkg, outputDir)
             }
 
             exception.message shouldBe "Calculated SHA-1 hash 'a6c32b40bf3d76eca54e3c601e5d1470c86fcdfa' differs " +
@@ -113,7 +113,7 @@ class DownloaderTest : StringSpec() {
         "Falls back to downloading source package when download from VCS fails".config(tags = setOf(ExpensiveTag)) {
             val pkg = Package(
                     id = Identifier(
-                            provider = "Maven",
+                            type = "Maven",
                             namespace = "junit",
                             name = "junit",
                             version = "4.12"
@@ -134,7 +134,7 @@ class DownloaderTest : StringSpec() {
                     )
             )
 
-            val downloadResult = Main.download(pkg, outputDir)
+            val downloadResult = Downloader().download(pkg, outputDir)
             downloadResult.vcsInfo shouldBe null
             downloadResult.sourceArtifact shouldNotBe null
             downloadResult.sourceArtifact!!.url shouldBe pkg.sourceArtifact.url
@@ -152,7 +152,7 @@ class DownloaderTest : StringSpec() {
             val url = "https://master.dl.sourceforge.net/project/tyrex/tyrex/Tyrex%201.0.1/tyrex-1.0.1-src.tgz"
             val pkg = Package(
                     id = Identifier(
-                            provider = "Maven",
+                            type = "Maven",
                             namespace = "tyrex",
                             name = "tyrex",
                             version = "1.0.1"
@@ -169,7 +169,7 @@ class DownloaderTest : StringSpec() {
                     vcs = VcsInfo.EMPTY
             )
 
-            val downloadResult = Main.download(pkg, outputDir)
+            val downloadResult = Downloader().download(pkg, outputDir)
             downloadResult.vcsInfo shouldBe null
             downloadResult.sourceArtifact shouldNotBe null
             downloadResult.sourceArtifact!!.url shouldBe pkg.sourceArtifact.url

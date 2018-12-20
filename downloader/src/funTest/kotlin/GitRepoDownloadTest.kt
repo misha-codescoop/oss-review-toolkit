@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ package com.here.ort.downloader.vcs
 
 import com.here.ort.model.Package
 import com.here.ort.model.VcsInfo
-import com.here.ort.utils.OS
 import com.here.ort.utils.safeDeleteRecursively
 import com.here.ort.utils.test.ExpensiveTag
 
@@ -31,9 +30,10 @@ import io.kotlintest.shouldBe
 import io.kotlintest.specs.StringSpec
 
 import java.io.File
+import java.io.FileFilter
 
 private const val REPO_URL = "https://github.com/heremaps/oss-review-toolkit-test-data"
-private const val REPO_REV = "63e77022c973e53ec4ca0dfc2f810a7393985d38"
+private const val REPO_REV = "918bd2e8a091bf63c97729f129a5429b2ffd70ed"
 private const val REPO_MANIFEST = "git-repo/manifest.xml"
 
 class GitRepoDownloadTest : StringSpec() {
@@ -44,29 +44,58 @@ class GitRepoDownloadTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
-        "GitRepo can download a given revision".config(enabled = !OS.isWindows, tags = setOf(ExpensiveTag)) {
+        "GitRepo can download a given revision".config(tags = setOf(ExpensiveTag)) {
             val vcs = VcsInfo("GitRepo", REPO_URL, REPO_REV, path = REPO_MANIFEST)
             val pkg = Package.EMPTY.copy(vcsProcessed = vcs)
-            val expectedFiles = listOf(
+            val workingTree = GitRepo().download(pkg, outputDir)
+
+            val grpcDir = File(outputDir, "grpc")
+            val expectedGrpcFiles = listOf(
                     ".git",
-                    "LICENSE",
-                    "README.md",
-                    "git-repo"
+                    ".github",
+                    ".vscode",
+                    "bazel",
+                    "cmake",
+                    "doc",
+                    "etc",
+                    "examples",
+                    "include",
+                    "src",
+                    "summerofcode",
+                    "templates",
+                    "test",
+                    "third_party",
+                    "tools",
+                    "vsprojects"
             )
 
-            val workingTree = GitRepo.download(pkg, outputDir)
-            val actualFiles = workingTree.workingDir.list().sorted()
+            val actualGrpcFiles = grpcDir.listFiles(FileFilter { it.isDirectory }).map { it.name }.sorted()
+
+            val spdxDir = File(outputDir, "spdx-tools")
+            val expectedSpdxFiles = listOf(
+                    ".git",
+                    "Examples",
+                    "Test",
+                    "TestFiles",
+                    "doc",
+                    "resources",
+                    "src"
+            )
+
+            val actualSpdxFiles = spdxDir.listFiles(FileFilter { it.isDirectory }).map { it.name }.sorted()
 
             workingTree.isValid() shouldBe true
             workingTree.getInfo() shouldBe vcs
-            actualFiles.joinToString("\n") shouldBe expectedFiles.joinToString("\n")
 
-            workingTree.getPathToRoot(File(outputDir, "docker/Dockerfile")) shouldBe "docker/Dockerfile"
-            workingTree.getPathToRoot(File(outputDir, "test-data/README.md")) shouldBe "test-data/README.md"
+            workingTree.getPathToRoot(File(outputDir, "grpc/README.md")) shouldBe "grpc/README.md"
+            workingTree.getPathToRoot(File(outputDir, "spdx-tools/TODO")) shouldBe "spdx-tools/TODO"
+
+            actualGrpcFiles.joinToString("\n") shouldBe expectedGrpcFiles.joinToString("\n")
+            actualSpdxFiles.joinToString("\n") shouldBe expectedSpdxFiles.joinToString("\n")
         }
     }
 }

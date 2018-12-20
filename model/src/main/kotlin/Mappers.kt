@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,16 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 
-val ortModelModule = SimpleModule("OrtModelModule").apply {
-    addDeserializer(Identifier::class.java, IdentifierFromStringDeserializer())
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.AnalyzerConfigurationDeserializer
+
+private val ortModelModule = SimpleModule("OrtModelModule").apply {
+    addDeserializer(AnalyzerConfiguration::class.java, AnalyzerConfigurationDeserializer())
+    addDeserializer(OrtIssue::class.java, OrtIssueDeserializer())
     addDeserializer(VcsInfo::class.java, VcsInfoDeserializer())
 
+    addSerializer(OrtIssue::class.java, OrtIssueSerializer())
     addSerializer(Identifier::class.java, IdentifierToStringSerializer())
-
-    addKeyDeserializer(Identifier::class.java, IdentifierFromStringKeyDeserializer())
 }
 
 /**
@@ -49,7 +52,7 @@ private val mapperConfig: ObjectMapper.() -> Unit = {
 
     registerModule(ortModelModule)
 
-    setPropertyNamingStrategy(PropertyNamingStrategy.SNAKE_CASE)
+    propertyNamingStrategy = PropertyNamingStrategy.SNAKE_CASE
 }
 
 val jsonMapper = ObjectMapper().apply(mapperConfig)

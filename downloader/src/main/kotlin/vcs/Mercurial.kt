@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,41 +23,41 @@ import ch.frankel.slf4k.*
 
 import com.here.ort.downloader.DownloadException
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.downloader.WorkingTree
 import com.here.ort.model.Package
+import com.here.ort.spdx.LICENSE_FILE_NAMES
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.getCommandVersion
 import com.here.ort.utils.log
-import com.here.ort.utils.showStackTrace
-import com.here.ort.utils.spdx.LICENSE_FILE_NAMES
 
 import java.io.File
 import java.io.IOException
 import java.util.regex.Pattern
 
-object Mercurial : VersionControlSystem() {
-    private const val EXTENSION_LARGE_FILES = "largefiles = "
-    private const val EXTENSION_SPARSE = "sparse = "
+const val MERCURIAL_LARGE_FILES_EXTENSION = "largefiles = "
+const val MERCURIAL_SPARSE_EXTENSION = "sparse = "
+
+class Mercurial : VersionControlSystem(), CommandLineTool {
+    private val versionRegex = Pattern.compile("Mercurial .*\\([Vv]ersion (?<version>[\\d.]+)\\)")
 
     override val aliases = listOf("mercurial", "hg")
-    override val commandName = "hg"
     override val latestRevisionNames = listOf("tip")
 
-    override fun getVersion(): String {
-        val versionRegex = Pattern.compile("Mercurial .*\\([Vv]ersion (?<version>[\\d.]+)\\)")
+    override fun command(workingDir: File?) = "hg"
 
-        return getCommandVersion("hg") {
-            versionRegex.matcher(it.lineSequence().first()).let {
-                if (it.matches()) {
-                    it.group("version")
-                } else {
-                    ""
+    override fun getVersion() =
+            getVersion { output ->
+                versionRegex.matcher(output.lineSequence().first()).let {
+                    if (it.matches()) {
+                        it.group("version")
+                    } else {
+                        ""
+                    }
                 }
             }
-        }
-    }
 
     override fun getWorkingTree(vcsDirectory: File) =
-            object : WorkingTree(vcsDirectory) {
+            object : WorkingTree(vcsDirectory, type) {
                 override fun isValid(): Boolean {
                     if (!workingDir.isDirectory) {
                         return false
@@ -65,19 +65,19 @@ object Mercurial : VersionControlSystem() {
 
                     // Do not use runMercurialCommand() here as we do not require the command to succeed.
                     val hgRootPath = ProcessCapture(workingDir, "hg", "root")
-                    return hgRootPath.isSuccess() && workingDir.path.startsWith(hgRootPath.stdout().trimEnd())
+                    return hgRootPath.isSuccess && workingDir.path.startsWith(hgRootPath.stdout.trimEnd())
                 }
 
                 override fun isShallow() = false
 
-                override fun getRemoteUrl() = run(workingDir, "paths", "default").stdout().trimEnd()
+                override fun getRemoteUrl() = run(workingDir, "paths", "default").stdout.trimEnd()
 
-                override fun getRevision() = run(workingDir, "--debug", "id", "-i").stdout().trimEnd()
+                override fun getRevision() = run(workingDir, "--debug", "id", "-i").stdout.trimEnd()
 
-                override fun getRootPath() = File(run(workingDir, "root").stdout().trimEnd())
+                override fun getRootPath() = File(run(workingDir, "root").stdout.trimEnd())
 
                 override fun listRemoteBranches(): List<String> {
-                    val branches = run(workingDir, "branches").stdout().trimEnd()
+                    val branches = run(workingDir, "branches").stdout.trimEnd()
                     return branches.lines().map {
                         it.split(' ').first()
                     }.sorted()
@@ -87,28 +87,28 @@ object Mercurial : VersionControlSystem() {
                     // Mercurial does not have the concept of global remote tags. Its "regular tags" are defined per
                     // branch as part of the committed ".hgtags" file. See https://stackoverflow.com/a/2059189/1127485.
                     run(workingDir, "pull", "-r", "default")
-                    val tags = run(workingDir, "cat", "-r", "default", ".hgtags").stdout().trimEnd()
+                    val tags = run(workingDir, "cat", "-r", "default", ".hgtags").stdout.trimEnd()
                     return tags.lines().map {
                         it.split(' ').last()
                     }.sorted()
                 }
             }
 
-    override fun isApplicableUrl(vcsUrl: String) = vcsUrl.isNotBlank() &&
-            ProcessCapture("hg", "identify", vcsUrl).isSuccess()
+    override fun isApplicableUrlInternal(vcsUrl: String) =
+            ProcessCapture("hg", "identify", vcsUrl).isSuccess
 
     override fun download(pkg: Package, targetDir: File, allowMovingRevisions: Boolean,
                           recursive: Boolean): WorkingTree {
-        log.info { "Using $this version ${getVersion()}." }
+        log.info { "Using $type version ${getVersion()}." }
 
         try {
             // We cannot detect beforehand if the Large Files extension would be required, so enable it by default.
-            val extensionsList = mutableListOf(EXTENSION_LARGE_FILES)
+            val extensionsList = mutableListOf(MERCURIAL_LARGE_FILES_EXTENSION)
 
             if (pkg.vcsProcessed.path.isNotBlank() && isAtLeastVersion("4.3")) {
                 // Starting with version 4.3 Mercurial has experimental built-in support for sparse checkouts, see
                 // https://www.mercurial-scm.org/wiki/WhatsNew#Mercurial_4.3_.2F_4.3.1_.282017-08-10.29
-                extensionsList += EXTENSION_SPARSE
+                extensionsList += MERCURIAL_SPARSE_EXTENSION
             }
 
             run(targetDir, "init")
@@ -117,9 +117,9 @@ object Mercurial : VersionControlSystem() {
                 default = ${pkg.vcsProcessed.url}
                 [extensions]
 
-                """.trimIndent() + extensionsList.joinToString(separator = "\n"))
+                """.trimIndent() + extensionsList.joinToString("\n"))
 
-            if (EXTENSION_SPARSE in extensionsList) {
+            if (MERCURIAL_SPARSE_EXTENSION in extensionsList) {
                 log.info { "Configuring Mercurial to do sparse checkout of path '${pkg.vcsProcessed.path}'." }
                 run(targetDir, "debugsparse", "-I", "${pkg.vcsProcessed.path}/**",
                         *LICENSE_FILE_NAMES.flatMap { listOf("-I", it) }.toTypedArray())
@@ -130,11 +130,11 @@ object Mercurial : VersionControlSystem() {
             val revision = if (allowMovingRevisions || isFixedRevision(workingTree, pkg.vcsProcessed.revision)) {
                 pkg.vcsProcessed.revision
             } else {
-                log.info { "Trying to guess a $this revision for version '${pkg.id.version}'." }
+                log.info { "Trying to guess a $type revision for version '${pkg.id.version}'." }
                 try {
                     workingTree.guessRevisionName(pkg.id.name, pkg.id.version).also { revision ->
                         log.warn {
-                            "Using guessed $this revision '$revision' for version '${pkg.id.version}'. This might " +
+                            "Using guessed $type revision '$revision' for version '${pkg.id.version}'. This might " +
                                     "cause the downloaded source code to not match the package version."
                         }
                     }
@@ -153,9 +153,7 @@ object Mercurial : VersionControlSystem() {
 
             return workingTree
         } catch (e: IOException) {
-            e.showStackTrace()
-
-            throw DownloadException("$this failed to download from URL '${pkg.vcsProcessed.url}'.", e)
+            throw DownloadException("$type failed to download from URL '${pkg.vcsProcessed.url}'.", e)
         }
     }
 }

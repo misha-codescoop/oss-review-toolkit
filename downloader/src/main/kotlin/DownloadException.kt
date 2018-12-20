@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 package com.here.ort.downloader
 
 class DownloadException : Exception {
-    constructor(cause: Exception): super(cause)
-    constructor(message: String): super(message)
-    constructor(message: String, cause: Exception?): super(message, cause)
+    constructor(message: String?, cause: Throwable?): super(message, cause)
+    constructor(message: String?): super(message)
+    constructor(cause: Throwable?): super(cause)
 }

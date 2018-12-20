@@ -1,10 +1,8 @@
 ---
-allow_dynamic_versions: true
 project:
   id: "Maven:jgnash:jgnash2:2.30.0"
   definition_file_path: "pom.xml"
   declared_licenses: []
-  aliases: []
   vcs:
     type: "git"
     url: "git://github.com:ccavanaugh/jgnash.git"
@@ -18,14 +16,9 @@ project:
   homepage_url: "http://sourceforge.net/projects/jgnash/"
   scopes:
   - name: "test"
-    delivered: false
     dependencies:
     - id: "Maven:junit:junit:4.12"
-      dependencies: []
-      errors: []
     - id: "Maven:org.hamcrest:hamcrest-all:1.3"
-      dependencies: []
-      errors: []
 packages:
 - package:
     id: "Maven:junit:junit:4.12"
@@ -79,4 +72,3 @@ packages:
       revision: ""
       path: ""
   curations: []
-errors: []

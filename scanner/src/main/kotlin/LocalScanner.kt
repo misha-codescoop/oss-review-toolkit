@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,21 +19,40 @@
 
 package com.here.ort.scanner
 
+import ch.frankel.slf4k.*
+
 import com.fasterxml.jackson.databind.JsonNode
 
 import com.here.ort.downloader.DownloadException
-import com.here.ort.downloader.Main
+import com.here.ort.downloader.Downloader
+import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.EMPTY_JSON_NODE
+import com.here.ort.model.Environment
+import com.here.ort.model.OrtIssue
+import com.here.ort.model.Identifier
+import com.here.ort.model.OrtResult
 import com.here.ort.model.Package
 import com.here.ort.model.Provenance
+import com.here.ort.model.Repository
+import com.here.ort.model.ScanRecord
 import com.here.ort.model.ScanResult
+import com.here.ort.model.ScanResultContainer
 import com.here.ort.model.ScanSummary
 import com.here.ort.model.ScannerDetails
+import com.here.ort.model.ScannerRun
+import com.here.ort.model.config.RepositoryConfiguration
+import com.here.ort.model.config.ScannerConfiguration
 import com.here.ort.model.mapper
-import com.here.ort.utils.collectMessages
+import com.here.ort.utils.CommandLineTool
+import com.here.ort.utils.OS
+import com.here.ort.utils.collectMessagesAsString
+import com.here.ort.utils.fileSystemEncode
 import com.here.ort.utils.getPathFromEnvironment
+import com.here.ort.utils.log
 import com.here.ort.utils.safeMkdirs
 import com.here.ort.utils.showStackTrace
+
+import com.vdurmont.semver4j.Requirement
 
 import java.io.File
 import java.io.IOException
@@ -43,7 +62,7 @@ import java.time.Instant
  * Implementation of [Scanner] for scanners that operate locally. Packages passed to [scan] are processed in serial
  * order. Scan results can be cached in a [ScanResultsCache].
  */
-abstract class LocalScanner : Scanner() {
+abstract class LocalScanner(config: ScannerConfiguration) : Scanner(config), CommandLineTool {
     /**
      * A property containing the file name extension of the scanner's native output format, without the dot.
      */
@@ -53,11 +72,14 @@ abstract class LocalScanner : Scanner() {
      * The directory the scanner was bootstrapped to, if so.
      */
     protected val scannerDir by lazy {
+        val scannerExe = command()
+
         getPathFromEnvironment(scannerExe)?.parentFile?.takeIf {
             getVersion(it) == scannerVersion
         } ?: run {
             if (scannerExe.isNotEmpty()) {
-                println("Bootstrapping scanner '$this' as version $scannerVersion was not found in PATH.")
+                log.info { "Bootstrapping scanner '$this' as required version $scannerVersion was not found in PATH." }
+
                 bootstrap().also {
                     val actualScannerVersion = getVersion(it)
                     if (actualScannerVersion != scannerVersion) {
@@ -66,26 +88,29 @@ abstract class LocalScanner : Scanner() {
                     }
                 }
             } else {
-                println("Skipping to bootstrap scanner '$this' as it has no executable.")
+                log.info { "Skipping to bootstrap scanner '$this' as it has no executable." }
+
                 File("")
             }
         }
     }
 
     /**
-     * The scanner's executable file name.
-     */
-    protected abstract val scannerExe: String
-
-    /**
-     * The expected version of the scanner. This is also the version that would get bootstrapped.
+     * The required version of the scanner. This is also the version that would get bootstrapped.
      */
     protected abstract val scannerVersion: String
 
     /**
      * The full path to the scanner executable.
      */
-    protected val scannerPath by lazy { File(scannerDir, scannerExe) }
+    protected val scannerPath by lazy { File(scannerDir, command()) }
+
+    override fun getVersionRequirement(): Requirement = Requirement.buildLoose(scannerVersion)
+
+    /**
+     * Return the actual version of the scanner, or an empty string in case of failure.
+     */
+    abstract fun getVersion(dir: File = scannerDir): String
 
     /**
      * Bootstrap the scanner to be ready for use, like downloading and / or configuring it.
@@ -109,19 +134,23 @@ abstract class LocalScanner : Scanner() {
      */
     fun getDetails() = ScannerDetails(getName(), getVersion(), getConfiguration())
 
-    /**
-     * Return the actual version of the scanner, or an empty string in case of failure.
-     */
-    abstract fun getVersion(dir: File = scannerDir): String
-
     override fun scan(packages: List<Package>, outputDirectory: File, downloadDirectory: File?)
             : Map<Package, List<ScanResult>> {
         val scannerDetails = getDetails()
 
-        return packages.associate { pkg ->
+        return packages.withIndex().associate { (index, pkg) ->
             val result = try {
-                scanPackage(scannerDetails, pkg, outputDirectory, downloadDirectory)
+                log.info { "Starting scan of '${pkg.id}' (${index + 1}/${packages.size})." }
+
+                scanPackage(scannerDetails, pkg, outputDirectory, downloadDirectory).map {
+                    // Remove the now unneeded reference to rawResult here to allow garbage collection to clean it up.
+                    it.copy(rawResult = null)
+                }
             } catch (e: ScanException) {
+                e.showStackTrace()
+
+                log.error { "Could not scan '${pkg.id}': ${e.collectMessagesAsString()}" }
+
                 val now = Instant.now()
                 listOf(ScanResult(
                         provenance = Provenance(now),
@@ -130,8 +159,9 @@ abstract class LocalScanner : Scanner() {
                                 startTime = now,
                                 endTime = now,
                                 fileCount = 0,
-                                licenses = sortedSetOf(),
-                                errors = e.collectMessages().toSortedSet()
+                                licenseFindings = sortedSetOf(),
+                                errors = listOf(OrtIssue(source = javaClass.simpleName,
+                                        message = e.collectMessagesAsString()))
                         ),
                         rawResult = EMPTY_JSON_NODE)
                 )
@@ -139,6 +169,49 @@ abstract class LocalScanner : Scanner() {
 
             Pair(pkg, result)
         }
+    }
+
+    /**
+     * Scan all files in [inputPath] using this [Scanner] and store the scan results in [outputDirectory].
+     */
+    fun scanInputPath(inputPath: File, outputDirectory: File): OrtResult {
+        val absoluteInputPath = inputPath.absoluteFile
+
+        require(inputPath.exists()) {
+            "Specified path '$absoluteInputPath' does not exist."
+        }
+
+        log.info { "Scanning path '$absoluteInputPath'..." }
+
+        val result = try {
+            scanPath(inputPath, outputDirectory).also {
+                log.info {
+                    "Detected licenses for path '$absoluteInputPath': ${it.summary.licenses.joinToString()}"
+                }
+            }
+        } catch (e: ScanException) {
+            e.showStackTrace()
+
+            log.error { "Could not scan path '$absoluteInputPath': ${e.message}" }
+
+            val now = Instant.now()
+            val summary = ScanSummary(now, now, 0, sortedSetOf(),
+                    listOf(OrtIssue(source = toString(), message = e.collectMessagesAsString())))
+            ScanResult(Provenance(now), getDetails(), summary)
+        }
+
+        // There is no package id for arbitrary paths so create a fake one, ensuring that no ":" is contained.
+        val id = Identifier(OS.name.fileSystemEncode(), absoluteInputPath.parent.fileSystemEncode(),
+                inputPath.name.fileSystemEncode(), "")
+
+        val scanResultContainer = ScanResultContainer(id, listOf(result))
+        val scanRecord = ScanRecord(sortedSetOf(), sortedSetOf(scanResultContainer), ScanResultsCache.stats)
+        val scannerRun = ScannerRun(Environment(), config, scanRecord)
+
+        val vcs = VersionControlSystem.getCloneInfo(inputPath)
+        val repository = Repository(vcs, vcs.normalize(), RepositoryConfiguration())
+
+        return OrtResult(repository, scanner = scannerRun)
     }
 
     /**
@@ -172,9 +245,11 @@ abstract class LocalScanner : Scanner() {
         }
 
         val downloadResult = try {
-            Main.download(pkg, downloadDirectory ?: File(outputDirectory, "downloads"))
+            Downloader().download(pkg, downloadDirectory ?: File(outputDirectory, "downloads"))
         } catch (e: DownloadException) {
             e.showStackTrace()
+
+            log.error { "Could not download '${pkg.id}': ${e.collectMessagesAsString()}" }
 
             val now = Instant.now()
             val scanResult = ScanResult(
@@ -184,17 +259,21 @@ abstract class LocalScanner : Scanner() {
                             startTime = now,
                             endTime = now,
                             fileCount = 0,
-                            licenses = sortedSetOf(),
-                            errors = sortedSetOf("Package '${pkg.id}' could not be scanned because no source code " +
-                                    "could be downloaded: ${e.message}")
+                            licenseFindings = sortedSetOf(),
+                            errors = listOf(OrtIssue(
+                                    source = javaClass.simpleName,
+                                    message = e.collectMessagesAsString()
+                            ))
                     ),
                     EMPTY_JSON_NODE
             )
             return listOf(scanResult)
         }
 
-        println("Running $this version ${scannerDetails.version} on directory " +
-                "'${downloadResult.downloadDirectory.canonicalPath}'.")
+        log.info {
+            "Running $this version ${scannerDetails.version} on directory " +
+                    "'${downloadResult.downloadDirectory.absolutePath}'."
+        }
 
         val provenance = Provenance(downloadResult.dateTime, downloadResult.sourceArtifact, downloadResult.vcsInfo,
                 downloadResult.originalVcsInfo)
@@ -222,10 +301,11 @@ abstract class LocalScanner : Scanner() {
         val resultsFile = File(scanResultsDirectory,
                 "${path.nameWithoutExtension}_${scannerDetails.name}.$resultFileExt")
 
-        println("Running $this version ${scannerDetails.version} on path '${path.canonicalPath}'.")
+        log.info { "Running $this version ${scannerDetails.version} on path '${path.absolutePath}'." }
 
-        return scanPath(scannerDetails, path, Provenance(downloadTime = Instant.now()), resultsFile)
-                .also { println("Stored $this results in '${resultsFile.absolutePath}'.") }
+        return scanPath(scannerDetails, path, Provenance(downloadTime = Instant.now()), resultsFile).also {
+            log.info { "Stored $this results in '${resultsFile.absolutePath}'." }
+        }
     }
 
     /**

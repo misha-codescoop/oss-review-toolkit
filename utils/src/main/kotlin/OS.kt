@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,10 @@ package com.here.ort.utils
  * Operating-System-specific utility functions.
  */
 object OS {
-    private val OS_NAME = System.getProperty("os.name").toLowerCase()
+    val name = System.getProperty("os.name") ?: ""
+    private val nameLowerCase = name.toLowerCase()
 
-    val isLinux = "linux" in OS_NAME
-    val isMac = "mac" in OS_NAME
-    val isWindows = "windows" in OS_NAME
+    val isLinux = "linux" in nameLowerCase
+    val isMac = "mac" in nameLowerCase
+    val isWindows = "windows" in nameLowerCase
 }

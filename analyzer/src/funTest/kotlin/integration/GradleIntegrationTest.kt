@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 
 package com.here.ort.analyzer.integration
 
-import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.analyzer.managers.Gradle
 import com.here.ort.analyzer.managers.Maven
@@ -33,7 +32,7 @@ import java.io.File
 class GradleIntegrationTest : AbstractIntegrationSpec() {
     override val pkg: Package = Package(
             id = Identifier(
-                    provider = "Maven",
+                    type = "Maven",
                     namespace = "org.gradle",
                     name = "Gradle",
                     version = "4.4.0"
@@ -50,7 +49,7 @@ class GradleIntegrationTest : AbstractIntegrationSpec() {
             )
     )
 
-    override val expectedDefinitionFiles by lazy {
+    override val expectedManagedFiles by lazy {
         // The Gradle project contains far too many definition files to list them all here. Use this tests to double
         // check that all of them are found, and that they are assigned to the correct package manager.
         val gradleFilenames = listOf("build.gradle", "settings.gradle")
@@ -62,14 +61,16 @@ class GradleIntegrationTest : AbstractIntegrationSpec() {
             it.name == "settings.gradle" && File(it.parent, "build.gradle") in gradleFiles
         }
 
+        val pomFiles = downloadResult.downloadDirectory.walkTopDown().filter { it.name == "pom.xml" }.toList()
+
         mapOf(
-                Gradle to gradleFiles,
-                Maven to downloadResult.downloadDirectory.walkTopDown().filter { it.name == "pom.xml" }.toList()
+                Gradle.Factory() as PackageManagerFactory to gradleFiles,
+                Maven.Factory() as PackageManagerFactory to pomFiles
         )
     }
 
-    override val definitionFilesForTest by lazy {
-        mapOf(Gradle as PackageManagerFactory<PackageManager> to
+    override val managedFilesForTest by lazy {
+        mapOf(Gradle.Factory() as PackageManagerFactory to
                 listOf(File(downloadResult.downloadDirectory, "buildSrc/build.gradle")))
     }
 }

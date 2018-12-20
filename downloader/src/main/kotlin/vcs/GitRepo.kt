@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,36 +22,40 @@ package com.here.ort.downloader.vcs
 import ch.frankel.slf4k.*
 
 import com.here.ort.downloader.DownloadException
+import com.here.ort.downloader.WorkingTree
 import com.here.ort.model.Package
 import com.here.ort.model.VcsInfo
+import com.here.ort.utils.OS
 import com.here.ort.utils.ProcessCapture
+import com.here.ort.utils.getPathFromEnvironment
 import com.here.ort.utils.log
+import com.here.ort.utils.realFile
 import com.here.ort.utils.searchUpwardsForSubdirectory
-import com.here.ort.utils.showStackTrace
 
 import java.io.File
 import java.io.IOException
 
-object GitRepo : GitBase() {
+class GitRepo : GitBase() {
     override val aliases = listOf("gitrepo", "git-repo", "repo")
 
     override fun getWorkingTree(vcsDirectory: File): WorkingTree {
         val repoRoot = vcsDirectory.searchUpwardsForSubdirectory(".repo")
 
         return if (repoRoot == null) {
-            object : GitWorkingTree(vcsDirectory) {
+            object : GitWorkingTree(vcsDirectory, this) {
                 override fun isValid() = false
             }
         } else {
             // GitRepo is special in that the workingDir points to the Git working tree of the manifest files, yet
             // the root path is the directory containing the ".repo" directory. This way Git operations work on a valid
             // Git repository, but path operations work relative to the path GitRepo was initialized in.
-            object : GitWorkingTree(File(repoRoot, ".repo/manifests")) {
+            object : GitWorkingTree(File(repoRoot, ".repo/manifests"), this) {
                 // Return the path to the manifest as part of the VCS information, as that is required to recreate the
                 // working tree.
                 override fun getInfo(): VcsInfo {
                     val manifestLink = File(getRootPath(), ".repo/manifest.xml")
-                    return super.getInfo().copy(path = manifestLink.canonicalFile.toRelativeString(workingDir))
+                    val manifestFile = manifestLink.realFile()
+                    return super.getInfo().copy(path = manifestFile.relativeTo(workingDir).invariantSeparatorsPath)
                 }
 
                 // Return the directory in which "repo init" was run (that directory in not managed with Git).
@@ -60,7 +64,7 @@ object GitRepo : GitBase() {
         }
     }
 
-    override fun isApplicableUrl(vcsUrl: String) = false
+    override fun isApplicableUrlInternal(vcsUrl: String) = false
 
     /**
      * Clones the Git repositories defined in the manifest file using the Git Repo tool. The manifest file is checked
@@ -86,13 +90,31 @@ object GitRepo : GitBase() {
 
             return getWorkingTree(targetDir)
         } catch (e: IOException) {
-            e.showStackTrace()
-
             throw DownloadException("Could not clone from ${pkg.vcsProcessed.url} using manifest '$manifestPath'.", e)
         }
     }
 
     private fun runRepoCommand(targetDir: File, vararg args: String) {
-        ProcessCapture(targetDir, "repo", *args).requireSuccess()
+        val patchedArgs = if (args.first() == "init") {
+            if (OS.isWindows) {
+                // The current "stable" release of "repo" still does not support Windows officially, so get the latest
+                // code from the "master" branch instead.
+                listOf(args.first(), "--groups=all", "--no-clone-bundle", "--no-repo-verify", "--repo-branch=master") +
+                        args.drop(1)
+            } else {
+                listOf(args.first(), "--groups=all") + args.drop(1)
+            }
+        } else {
+            args.toList()
+        }
+
+        if (OS.isWindows) {
+            val repo = getPathFromEnvironment("repo") ?: throw IOException("'repo' not found in PATH.")
+
+            // On Windows, the script itself is not executable, so we need to wrap the call by "python".
+            ProcessCapture(targetDir, "python", repo.absolutePath, *patchedArgs.toTypedArray()).requireSuccess()
+        } else {
+            ProcessCapture(targetDir, "repo", *patchedArgs.toTypedArray()).requireSuccess()
+        }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,22 @@
 
 package com.here.ort.model
 
+import com.fasterxml.jackson.annotation.JsonInclude
+
 import java.util.SortedSet
+
+// A custom value filter for [PackageLinkage] to work around
+// https://github.com/FasterXML/jackson-module-kotlin/issues/193.
+class PackageLinkageValueFilter {
+    override fun equals(other: Any?) = other == PackageLinkage.DYNAMIC
+}
 
 /**
  * A human-readable reference to a software [Package]. Each package reference itself refers to other package
  * references that are dependencies of the package.
  */
+// Do not serialize default values to reduce the size of the result file.
+@JsonInclude(JsonInclude.Include.NON_DEFAULT)
 data class PackageReference(
         /**
          * The identifier of the package.
@@ -32,19 +42,44 @@ data class PackageReference(
         val id: Identifier,
 
         /**
+         * The type of linkage used for the referred package from its dependent package. As most of our supported
+         * [PackageManager]s / languages only support dynamic linking or at least default to it, also use that as the
+         * default value here to not blow up our result files.
+         */
+        @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = PackageLinkageValueFilter::class)
+        val linkage: PackageLinkage = PackageLinkage.DYNAMIC,
+
+        /**
          * The list of references to packages this package depends on. Note that this list depends on the scope in
          * which this package reference is used.
          */
-        val dependencies: SortedSet<PackageReference>,
+        val dependencies: SortedSet<PackageReference> = sortedSetOf(),
 
         /**
          * A list of errors that occurred handling this [PackageReference].
          */
-        val errors: List<String> = emptyList()
-) : CustomData(), Comparable<PackageReference> {
-    fun collectAllDependencies(): SortedSet<Identifier> = dependencies.map { it.id }.toSortedSet().also { result ->
-        dependencies.forEach { result += it.collectAllDependencies() }
-    }
+        val errors: List<OrtIssue> = emptyList(),
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        val data: CustomData = emptyMap()
+) : Comparable<PackageReference> {
+    /**
+     * Return the set of [PackageReference]s this [PackageReference] transitively depends on, up to and including a
+     * depth of [maxDepth] where counting starts at 0 (for the [PackageReference] itself) and 1 are direct dependencies
+     * etc. A value below 0 means to not limit the depth. If [includeErroneous] is true, [PackageReference]s with errors
+     * (but not their dependencies without errors) are excluded, otherwise they are included.
+     */
+    fun collectDependencies(maxDepth: Int = -1, includeErroneous: Boolean = true): SortedSet<PackageReference> =
+            dependencies.fold(sortedSetOf<PackageReference>()) { refs, ref ->
+                refs.also {
+                    if (maxDepth != 0) {
+                        if (ref.errors.isEmpty() || includeErroneous) it += ref
+                        it += ref.collectDependencies(maxDepth - 1, includeErroneous)
+                    }
+                }
+            }
 
     /**
      * A comparison function to sort package references by their identifier. This function ignores all other properties
@@ -53,17 +88,29 @@ data class PackageReference(
     override fun compareTo(other: PackageReference) = id.compareTo(other.id)
 
     /**
-     * Returns whether the given package is a (transitive) dependency of this reference.
+     * Return whether the package identified by [id] is a (transitive) dependency of this reference.
      */
-    fun dependsOn(pkg: Package) = dependsOn(pkg.id)
+    fun dependsOn(id: Identifier): Boolean = dependencies.any { it.id == id || it.dependsOn(id) }
 
     /**
-     * Returns whether the package identified by [pkgId] is a (transitive) dependency of this reference.
+     * Return all references to [id] as a dependency.
      */
-    fun dependsOn(pkgId: Identifier): Boolean {
-        return dependencies.find { pkgRef ->
-            // Strip the package manager part from the packageIdentifier because it is not part of the PackageReference.
-            pkgRef.id == pkgId || pkgRef.dependsOn(pkgId)
-        } != null
+    fun findReferences(id: Identifier): List<PackageReference> =
+            dependencies.filter { it.id == id } + dependencies.flatMap { it.findReferences(id) }
+
+    /**
+     * Return whether this package reference or any of its dependencies has errors.
+     */
+    fun hasErrors(): Boolean = errors.isNotEmpty() || dependencies.any { it.hasErrors() }
+
+    /**
+     * Apply the provided [transform] to each node in the dependency tree represented by this [PackageReference] and
+     * return the modified [PackageReference]. The tree is traversed depth-first (post-order).
+     */
+    fun traverse(transform: (PackageReference) -> PackageReference): PackageReference {
+        val transformedDependencies = dependencies.map {
+            it.traverse(transform)
+        }
+        return transform(copy(dependencies = transformedDependencies.toSortedSet()))
     }
 }

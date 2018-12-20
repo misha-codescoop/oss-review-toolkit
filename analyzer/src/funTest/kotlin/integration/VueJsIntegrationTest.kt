@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@
 
 package com.here.ort.analyzer.integration
 
-import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.analyzer.managers.NPM
+import com.here.ort.analyzer.managers.Yarn
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
 import com.here.ort.model.RemoteArtifact
@@ -32,7 +32,7 @@ import java.io.File
 class VueJsIntegrationTest : AbstractIntegrationSpec() {
     override val pkg: Package = Package(
             id = Identifier(
-                    provider = "NPM",
+                    type = "NPM",
                     namespace = "",
                     name = "Vue.js",
                     version = ""
@@ -49,10 +49,17 @@ class VueJsIntegrationTest : AbstractIntegrationSpec() {
             )
     )
 
-    override val expectedDefinitionFiles by lazy {
+    override val expectedManagedFiles by lazy {
         val downloadDir = downloadResult.downloadDirectory
         mapOf(
-                NPM as PackageManagerFactory<PackageManager> to listOf(
+                NPM.Factory() as PackageManagerFactory to listOf(
+                        File(downloadDir, "package.json"),
+                        File(downloadDir, "packages/vue-server-renderer/package.json"),
+                        File(downloadDir, "packages/vue-template-compiler/package.json"),
+                        File(downloadDir, "packages/weex-template-compiler/package.json"),
+                        File(downloadDir, "packages/weex-vue-framework/package.json")
+                ),
+                Yarn.Factory() as PackageManagerFactory to listOf(
                         File(downloadDir, "package.json"),
                         File(downloadDir, "packages/vue-server-renderer/package.json"),
                         File(downloadDir, "packages/vue-template-compiler/package.json"),
@@ -62,8 +69,10 @@ class VueJsIntegrationTest : AbstractIntegrationSpec() {
         )
     }
 
-    override val definitionFilesForTest by lazy {
-        mapOf(NPM as PackageManagerFactory<PackageManager> to
+    override val managedFilesForTest by lazy {
+        mapOf(NPM.Factory() as PackageManagerFactory to
                 listOf(File(downloadResult.downloadDirectory, "package.json")))
     }
+
+    override val identifiersWithExpectedErrors = setOf(Identifier("NPM::fsevents:"))
 }

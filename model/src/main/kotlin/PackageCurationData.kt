@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ package com.here.ort.model
 
 import com.fasterxml.jackson.annotation.JsonInclude
 
+import com.here.ort.spdx.SpdxExpression
+
 import java.util.SortedSet
 
 /**
@@ -35,6 +37,13 @@ data class PackageCurationData(
          */
         @JsonInclude(JsonInclude.Include.NON_NULL)
         val declaredLicenses: SortedSet<String>? = null,
+
+        /**
+         * The concluded license as an [SpdxExpression]. It can be used to correct the license of a package in case the
+         * [declaredLicenses] found in the packages metadata or the licenses detected by a scanner do not match reality.
+         */
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        val concludedLicense: SpdxExpression? = null,
 
         /**
          * The description of the package, as provided by the package manager.
@@ -71,8 +80,14 @@ data class PackageCurationData(
          * created.
          */
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        val comment: String? = null
-) : CustomData() {
+        val comment: String? = null,
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) {
     /**
      * Apply the curation data to the provided package, by overriding all values of the original package with non-null
      * values of the curation data.
@@ -98,6 +113,7 @@ data class PackageCurationData(
             Package(
                     id = pkg.id,
                     declaredLicenses = declaredLicenses ?: pkg.declaredLicenses,
+                    concludedLicense = concludedLicense ?: pkg.concludedLicense,
                     description = description ?: pkg.description,
                     homepageUrl = homepageUrl ?: pkg.homepageUrl,
                     binaryArtifact = binaryArtifact ?: pkg.binaryArtifact,

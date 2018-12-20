@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,16 +24,20 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 
 import com.here.ort.model.EMPTY_JSON_NODE
+import com.here.ort.model.LicenseFinding
 import com.here.ort.model.Provenance
 import com.here.ort.model.ScanResult
 import com.here.ort.model.ScanSummary
 import com.here.ort.model.ScannerDetails
+import com.here.ort.model.config.ScannerConfiguration
 import com.here.ort.model.jsonMapper
 import com.here.ort.scanner.LocalScanner
 import com.here.ort.scanner.ScanException
+import com.here.ort.scanner.AbstractScannerFactory
+import com.here.ort.utils.CommandLineTool
+import com.here.ort.utils.CI
 import com.here.ort.utils.OS
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.getCommandVersion
 import com.here.ort.utils.getPathFromEnvironment
 import com.here.ort.utils.log
 
@@ -41,37 +45,48 @@ import java.io.File
 import java.io.IOException
 import java.time.Instant
 
-object Licensee : LocalScanner() {
-    override val scannerExe = if (OS.isWindows) "licensee.bat" else "licensee"
-    override val scannerVersion = "9.9.0.beta.3"
+class Licensee(config: ScannerConfiguration) : LocalScanner(config) {
+    class Factory : AbstractScannerFactory<Licensee>() {
+        override fun create(config: ScannerConfiguration) = Licensee(config)
+    }
+
+    override val scannerVersion = "9.10.1"
     override val resultFileExt = "json"
 
     val CONFIGURATION_OPTIONS = listOf("--json")
+
+    override fun command(workingDir: File?) = if (OS.isWindows) "licensee.bat" else "licensee"
+
+    override fun getVersion(dir: File): String {
+        // Create a temporary tool to get its version from the installation in a specific directory.
+        val cmd = command()
+        val tool = object : CommandLineTool {
+            override fun command(workingDir: File?) = dir.resolve(cmd).absolutePath
+        }
+
+        return tool.getVersion("version")
+    }
 
     override fun bootstrap(): File {
         val gem = if (OS.isWindows) "gem.cmd" else "gem"
 
         // Work around Travis CI not being able to handle gem user installs, see
         // https://github.com/travis-ci/travis-ci/issues/9412.
-        // TODO: Use toBoolean() here once https://github.com/JetBrains/kotlin/pull/1644 is merged.
-        val isTravisCi = listOf("TRAVIS", "CI").all { java.lang.Boolean.parseBoolean(System.getenv(it)) }
-        return if (isTravisCi) {
+        return if (CI.isTravis) {
             ProcessCapture(gem, "install", "licensee", "-v", scannerVersion).requireSuccess()
-            getPathFromEnvironment(scannerExe)?.parentFile
+            getPathFromEnvironment(command())?.parentFile
                     ?: throw IOException("Install directory for licensee not found.")
         } else {
             ProcessCapture(gem, "install", "--user-install", "licensee", "-v", scannerVersion).requireSuccess()
 
-            val ruby = ProcessCapture("ruby", "-rubygems", "-e", "puts Gem.user_dir").requireSuccess()
-            val userDir = ruby.stdout().trimEnd()
+            val ruby = ProcessCapture("ruby", "-r", "rubygems", "-e", "puts Gem.user_dir").requireSuccess()
+            val userDir = ruby.stdout.trimEnd()
 
             File(userDir, "bin")
         }
     }
 
     override fun getConfiguration() = CONFIGURATION_OPTIONS.joinToString(" ")
-
-    override fun getVersion(dir: File) = getCommandVersion(dir.resolve(scannerExe).canonicalPath, "version")
 
     override fun scanPath(scannerDetails: ScannerDetails, path: File, provenance: Provenance, resultsFile: File)
             : ScanResult {
@@ -87,7 +102,7 @@ object Licensee : LocalScanner() {
 
         val process = ProcessCapture(
                 parentPath,
-                scannerPath.canonicalPath,
+                scannerPath.absolutePath,
                 "detect",
                 *CONFIGURATION_OPTIONS.toTypedArray(),
                 relativePath
@@ -95,12 +110,12 @@ object Licensee : LocalScanner() {
 
         val endTime = Instant.now()
 
-        if (process.stderr().isNotBlank()) {
-            log.debug { process.stderr() }
+        if (process.stderr.isNotBlank()) {
+            log.debug { process.stderr }
         }
 
         with(process) {
-            if (isSuccess()) {
+            if (isSuccess) {
                 stdoutFile.copyTo(resultsFile)
                 val result = getResult(resultsFile)
                 val summary = generateSummary(startTime, endTime, result)
@@ -120,20 +135,12 @@ object Licensee : LocalScanner() {
     }
 
     override fun generateSummary(startTime: Instant, endTime: Instant, result: JsonNode): ScanSummary {
-        val licenses = sortedSetOf<String>()
-
-        val licenseSummary = result["licenses"]
         val matchedFiles = result["matched_files"]
 
-        matchedFiles.forEach {
-            val licenseKey = it["matched_license"].textValue()
-            licenseSummary.find {
-                it["key"].textValue() == licenseKey
-            }?.let {
-                licenses += it["spdx_id"].textValue()
-            }
-        }
+        val findings = matchedFiles.map {
+            LicenseFinding(it["matched_license"].textValue())
+        }.toSortedSet()
 
-        return ScanSummary(startTime, endTime, matchedFiles.count(), licenses, errors = sortedSetOf())
+        return ScanSummary(startTime, endTime, matchedFiles.count(), findings, errors = mutableListOf())
     }
 }

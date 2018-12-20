@@ -1,10 +1,8 @@
 ---
-allow_dynamic_versions: false
 project:
   id: "Bundler::lockfile:"
   definition_file_path: "analyzer/src/funTest/assets/projects/synthetic/bundler/lockfile/Gemfile"
   declared_licenses: []
-  aliases: []
   vcs:
     type: ""
     url: ""
@@ -18,47 +16,26 @@ project:
   homepage_url: ""
   scopes:
   - name: "default"
-    delivered: true
     dependencies:
     - id: "Bundler::nokogiri:1.8.2"
       dependencies:
       - id: "Bundler::mini_portile2:2.3.0"
-        dependencies: []
-        errors: []
-      errors: []
-    - id: "Bundler::rack:1.6.10"
-      dependencies: []
-      errors: []
+    - id: "Bundler::rack:1.6.11"
   - name: "test"
-    delivered: false
     dependencies:
     - id: "Bundler::rspec:3.7.0"
       dependencies:
       - id: "Bundler::rspec-core:3.7.1"
         dependencies:
         - id: "Bundler::rspec-support:3.7.1"
-          dependencies: []
-          errors: []
-        errors: []
       - id: "Bundler::rspec-expectations:3.7.0"
         dependencies:
         - id: "Bundler::diff-lcs:1.3"
-          dependencies: []
-          errors: []
         - id: "Bundler::rspec-support:3.7.1"
-          dependencies: []
-          errors: []
-        errors: []
       - id: "Bundler::rspec-mocks:3.7.0"
         dependencies:
         - id: "Bundler::diff-lcs:1.3"
-          dependencies: []
-          errors: []
         - id: "Bundler::rspec-support:3.7.1"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
 packages:
 - package:
     id: "Bundler::diff-lcs:1.3"
@@ -75,13 +52,13 @@ packages:
       \ experience\nto Ruby 2.4 users."
     homepage_url: "https://github.com/halostatue/diff-lcs"
     binary_artifact:
-      url: "https://rubygems.org/gems/diff-lcs-1.3.gem"
-      hash: "ea7bf591567e391ef262a7c29edaf87c6205204afb5bb39dfa8f08f2e51282a3"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/diff-lcs-1.3.gem"
+      hash: "ea7bf591567e391ef262a7c29edaf87c6205204afb5bb39dfa8f08f2e51282a3"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "https://github.com/halostatue/diff-lcs.git"
@@ -102,13 +79,13 @@ packages:
       \ up your system."
     homepage_url: "http://github.com/flavorjones/mini_portile"
     binary_artifact:
-      url: "https://rubygems.org/gems/mini_portile2-2.3.0.gem"
-      hash: "216417b241ff4e7b1c726f257241eaf223e3abbe6ec2c6453352dea6a414a38d"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/mini_portile2-2.3.0.gem"
+      hash: "216417b241ff4e7b1c726f257241eaf223e3abbe6ec2c6453352dea6a414a38d"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "http://github.com/flavorjones/mini_portile.git"
@@ -130,13 +107,13 @@ packages:
       \ many features is the ability to search documents via XPath\nor CSS3 selectors."
     homepage_url: "http://nokogiri.org"
     binary_artifact:
-      url: "https://rubygems.org/gems/nokogiri-1.8.2.gem"
-      hash: "382af505a11b735e97f52ec6279ea484be7a7560d5599e81def40943601fd515"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/nokogiri-1.8.2.gem"
+      hash: "382af505a11b735e97f52ec6279ea484be7a7560d5599e81def40943601fd515"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "https://github.com/sparklemotion/nokogiri.git"
@@ -149,7 +126,7 @@ packages:
       path: ""
   curations: []
 - package:
-    id: "Bundler::rack:1.6.10"
+    id: "Bundler::rack:1.6.11"
     declared_licenses:
     - "MIT"
     description: "Rack provides a minimal, modular and adaptable interface for developing\n\
@@ -157,15 +134,15 @@ packages:
       \ way possible, it unifies and distills the API for web\nservers, web frameworks,\
       \ and software in between (the so-called\nmiddleware) into a single method call.\n\
       \nAlso see http://rack.github.io/.\n"
-    homepage_url: "http://rack.github.io/"
+    homepage_url: "https://rack.github.io/"
     binary_artifact:
-      url: "https://rubygems.org/gems/rack-1.6.10.gem"
-      hash: "58e8ae09c502f219a6ad2e7f932072faf2d2b38ce6fd0251ac7ff3096c55c046"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/rack-1.6.11.gem"
+      hash: "ee2016b1ddf820f6e5ee437d10a85319506b60c0d493da1d15815361a91129bd"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "http://github.com/rack/rack.git"
@@ -184,13 +161,13 @@ packages:
     description: "BDD for Ruby. RSpec runner and example groups."
     homepage_url: "https://github.com/rspec/rspec-core"
     binary_artifact:
-      url: "https://rubygems.org/gems/rspec-core-3.7.1.gem"
-      hash: "526e0b2d22feae638eb99bd746bbb25b18a4869a8f6ce4e8a87dabd1ab5f727f"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/rspec-core-3.7.1.gem"
+      hash: "526e0b2d22feae638eb99bd746bbb25b18a4869a8f6ce4e8a87dabd1ab5f727f"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "http://github.com/rspec/rspec-core.git"
@@ -210,13 +187,13 @@ packages:
       \ outcomes of a code example."
     homepage_url: "https://github.com/rspec/rspec-expectations"
     binary_artifact:
-      url: "https://rubygems.org/gems/rspec-expectations-3.7.0.gem"
-      hash: "7e571848a5cbdb1661187d04e5c1f29287ec80fcb5a395f9994836892a3780bb"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/rspec-expectations-3.7.0.gem"
+      hash: "7e571848a5cbdb1661187d04e5c1f29287ec80fcb5a395f9994836892a3780bb"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "http://github.com/rspec/rspec-expectations.git"
@@ -235,13 +212,13 @@ packages:
     description: "RSpec's 'test double' framework, with support for stubbing and mocking"
     homepage_url: "https://github.com/rspec/rspec-mocks"
     binary_artifact:
-      url: "https://rubygems.org/gems/rspec-mocks-3.7.0.gem"
-      hash: "23f7f0039e17f2841edfb51d678ac9e06c056903a7908db967f5618887f2022c"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/rspec-mocks-3.7.0.gem"
+      hash: "23f7f0039e17f2841edfb51d678ac9e06c056903a7908db967f5618887f2022c"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "http://github.com/rspec/rspec-mocks.git"
@@ -260,13 +237,13 @@ packages:
     description: "Support utilities for RSpec gems"
     homepage_url: "https://github.com/rspec/rspec-support"
     binary_artifact:
-      url: "https://rubygems.org/gems/rspec-support-3.7.1.gem"
-      hash: "4152975a068756076f10c97317e9d2baf10028f3d25c0cb902945569560783da"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/rspec-support-3.7.1.gem"
+      hash: "4152975a068756076f10c97317e9d2baf10028f3d25c0cb902945569560783da"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "https://github.com/rspec/rspec-support.git"
@@ -287,13 +264,13 @@ packages:
     description: "BDD for Ruby"
     homepage_url: "http://github.com/rspec"
     binary_artifact:
-      url: "https://rubygems.org/gems/rspec-3.7.0.gem"
-      hash: "0174cfbed780e42aa181227af623e2ae37511f20a2fdfec48b54f6cf4d7a6404"
-      hash_algorithm: "SHA-256"
-    source_artifact:
       url: ""
       hash: ""
       hash_algorithm: ""
+    source_artifact:
+      url: "https://rubygems.org/gems/rspec-3.7.0.gem"
+      hash: "0174cfbed780e42aa181227af623e2ae37511f20a2fdfec48b54f6cf4d7a6404"
+      hash_algorithm: "SHA-256"
     vcs:
       type: "git"
       url: "http://github.com/rspec/rspec.git"
@@ -305,4 +282,3 @@ packages:
       revision: ""
       path: ""
   curations: []
-errors: []

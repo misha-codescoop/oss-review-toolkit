@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,11 @@
 package com.here.ort.scanner.scanners
 
 import com.here.ort.model.CacheStatistics
-import com.here.ort.scanner.Main
+import com.here.ort.model.config.ScannerConfiguration
+import com.here.ort.model.yamlMapper
 import com.here.ort.scanner.ScanResultsCache
 import com.here.ort.utils.safeDeleteRecursively
+import com.here.ort.utils.test.patchExpectedResult
 
 import io.kotlintest.Description
 import io.kotlintest.TestResult
@@ -44,27 +46,23 @@ class FileCounterTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputRootDir.safeDeleteRecursively()
+        outputRootDir.safeDeleteRecursively(force = true)
         ScanResultsCache.stats = CacheStatistics()
     }
 
-    private val timeRegex = Regex("((download|end|start)_time): \".*\"")
+    private val timeRegex = Regex("((download|end|start)_time|timestamp): \".*\"")
 
     private fun patchActualResult(result: String) = result
             .replace(timeRegex) { "${it.groupValues[1]}: \"${Instant.EPOCH}\"" }
 
     init {
-        "Gradle project scan results from analyzer result file are correct" {
+        "Gradle project scan results for a given analyzer result are correct" {
             val analyzerResultFile = File(assetsDir, "analyzer-result.yml")
-            val expectedResult = File(assetsDir, "file-counter-expected-output-for-analyzer-result.yml").readText()
+            val expectedResult = patchExpectedResult(
+                    File(assetsDir, "file-counter-expected-output-for-analyzer-result.yml"))
 
-            Main.main(arrayOf(
-                    "-d", analyzerResultFile.path,
-                    "-o", outputDir.path,
-                    "-s", "FileCounter"
-            ))
-
-            val result = File(outputDir, "scan-record.yml").readText()
+            val ortResult = FileCounter(ScannerConfiguration()).scanDependenciesFile(analyzerResultFile, outputDir)
+            val result = yamlMapper.writeValueAsString(ortResult)
 
             patchActualResult(result) shouldBe expectedResult
         }

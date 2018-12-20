@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
  * License-Filename: LICENSE
  */
 
-package com.here.ort.utils
+package com.here.ort.analyzer
 
 import com.here.ort.analyzer.managers.NPM
 
@@ -34,6 +34,8 @@ class NpmTest : WordSpec({
             val packages = mapOf(
                     "npm/npm"
                             to "https://github.com/npm/npm.git",
+                    "mochajs/mocha#4727d357ea"
+                            to "https://github.com/mochajs/mocha.git#4727d357ea",
                     "gist:11081aaa281"
                             to "https://gist.github.com/11081aaa281",
                     "bitbucket:example/repo"

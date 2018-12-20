@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,33 +21,19 @@ package com.here.ort.model
 
 import ch.frankel.slf4k.*
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
+
 import com.here.ort.utils.log
 
 import java.util.SortedMap
 import java.util.SortedSet
 
 /**
- * A class that merges all information from individual AnalyzerResults created for each found build file
+ * A class that merges all information from individual [ProjectAnalyzerResult]s created for each found definition file.
  */
+@JsonIgnoreProperties(value = ["has_errors"], allowGetters = true)
 data class AnalyzerResult(
-        /**
-         * If dynamic versions were allowed during the dependency resolution. If true it means that the dependency tree
-         * might change with another scan if any of the (transitive) dependencies is declared with a version range and
-         * a new version of this dependency was released in the meantime. It is always true for package managers that do
-         * not support lock files, but do support version ranges.
-         */
-        val allowDynamicVersions: Boolean,
-
-        /**
-         * The [VcsInfo] of the analyzed repository.
-         */
-        val vcs: VcsInfo,
-
-        /**
-         * The normalized [VcsInfo] of the analyzed repository.
-         */
-        val vcsProcessed: VcsInfo,
-
         /**
          * Sorted set of the projects, as they appear in the individual analyzer results.
          */
@@ -59,50 +45,82 @@ data class AnalyzerResult(
         val packages: SortedSet<CuratedPackage>,
 
         /**
-         * The list of all errors.
+         * The lists of errors that occurred within the analyzed projects themselves. Errors related to project
+         * dependencies are contained in the dependencies of the project's scopes.
          */
-        val errors: SortedMap<Identifier, List<String>>
-) : CustomData() {
+        // Do not serialize if empty to reduce the size of the result file. If there are no errors at all,
+        // [AnalyzerResult.hasErrors] already contains that information.
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val errors: SortedMap<Identifier, List<OrtIssue>> = sortedMapOf(),
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) {
+    companion object {
+        /**
+         * A constant for an [AnalyzerResult] where all properties are empty.
+         */
+        @JvmField
+        val EMPTY = AnalyzerResult(
+                projects = sortedSetOf(),
+                packages = sortedSetOf(),
+                errors = sortedMapOf()
+        )
+    }
+
     /**
-     * Create the individual [ProjectAnalyzerResult]s this [AnalyzerResult] was built from.
+     * True if there were any errors during the analysis, false otherwise.
      */
-    fun createProjectAnalyzerResults() = projects.map { project ->
-            val allDependencies = project.collectAllDependencies()
-            val projectPackages = packages.filter { it.pkg.id in allDependencies }.toSortedSet()
-            ProjectAnalyzerResult(allowDynamicVersions, project, projectPackages, errors[project.id] ?: emptyList())
-        }
+    @Suppress("UNUSED") // Not used in code, but shall be serialized.
+    val hasErrors by lazy {
+        errors.any { it.value.isNotEmpty() }
+                || projects.any { it.scopes.any { it.dependencies.any { it.hasErrors() } } }
+    }
 }
 
-class AnalyzerResultBuilder(
-        private val allowDynamicVersions: Boolean,
-        private val vcsInfo: VcsInfo
-) {
+class AnalyzerResultBuilder {
     private val projects = sortedSetOf<Project>()
     private val packages = sortedSetOf<CuratedPackage>()
-    private val errors = sortedMapOf<Identifier, List<String>>()
+    private val errors = sortedMapOf<Identifier, List<OrtIssue>>()
 
     fun build(): AnalyzerResult {
-        return AnalyzerResult(allowDynamicVersions, vcsInfo, vcsInfo.normalize(), projects, packages, errors)
+        return AnalyzerResult(projects, packages, errors)
     }
 
-    fun addResult(projectAnalyzerResult: ProjectAnalyzerResult) = this.apply {
-        // TODO: It might be, e.g. in the case of PIP "requirements.txt" projects, that different projects with the same
-        // ID exist. We need to decide how to handle that case.
-        val existingProject = projects.find { it.id == projectAnalyzerResult.project.id }
+    fun addResult(projectAnalyzerResult: ProjectAnalyzerResult) =
+            also {
+                // TODO: It might be, e.g. in the case of PIP "requirements.txt" projects, that different projects with
+                // the same ID exist. We need to decide how to handle that case.
+                val existingProject = projects.find { it.id == projectAnalyzerResult.project.id }
 
-        if (existingProject != null) {
-            val error = "Multiple projects with the same id '${existingProject.id}' found. Not adding the project " +
-                    "defined in '${projectAnalyzerResult.project.definitionFilePath}' to the analyzer results as it " +
-                    "duplicates the project defined in '${existingProject.definitionFilePath}'."
+                if (existingProject != null) {
+                    val existingDefinitionFileUrl = existingProject.let {
+                        "${it.vcsProcessed.url}/${it.definitionFilePath}"
+                    }
+                    val incomingDefinitionFileUrl = projectAnalyzerResult.project.let {
+                        "${it.vcsProcessed.url}/${it.definitionFilePath}"
+                    }
 
-            log.error { error }
+                    val error = OrtIssue(
+                            source = "analyzer",
+                            message = "Multiple projects with the same id '${existingProject.id}' found. Not adding " +
+                                    "the project defined in '$incomingDefinitionFileUrl' to the analyzer results " +
+                                    "as it duplicates the project defined in '$existingDefinitionFileUrl'."
+                    )
 
-            val projectErrors = errors.getOrDefault(existingProject.id, listOf())
-            errors[existingProject.id] = projectErrors + error
-        } else {
-            projects += projectAnalyzerResult.project
-            packages += projectAnalyzerResult.packages
-            errors[projectAnalyzerResult.project.id] = projectAnalyzerResult.errors
-        }
-    }
+                    log.error { error.message }
+
+                    val projectErrors = errors.getOrDefault(existingProject.id, listOf())
+                    errors[existingProject.id] = projectErrors + error
+                } else {
+                    projects += projectAnalyzerResult.project
+                    packages += projectAnalyzerResult.packages
+                    if (projectAnalyzerResult.errors.isNotEmpty()) {
+                        errors[projectAnalyzerResult.project.id] = projectAnalyzerResult.errors
+                    }
+                }
+            }
 }

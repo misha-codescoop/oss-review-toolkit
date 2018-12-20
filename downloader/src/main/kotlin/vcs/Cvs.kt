@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@ import ch.frankel.slf4k.*
 
 import com.here.ort.downloader.DownloadException
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.downloader.WorkingTree
 import com.here.ort.model.Package
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.getCommandVersion
 import com.here.ort.utils.log
 import com.here.ort.utils.safeDeleteRecursively
 import com.here.ort.utils.searchUpwardsForSubdirectory
-import com.here.ort.utils.showStackTrace
 
 import java.io.File
 import java.io.IOException
@@ -40,27 +40,27 @@ import org.apache.commons.codec.digest.DigestUtils
 
 typealias CvsFileRevisions = List<Pair<String, String>>
 
-object Cvs : VersionControlSystem() {
+class Cvs : VersionControlSystem(), CommandLineTool {
+    private val versionRegex = Pattern.compile("Concurrent Versions System \\(CVS\\) (?<version>[\\d.]+).+")
+
     override val aliases = listOf("cvs")
-    override val commandName = "cvs"
     override val latestRevisionNames = emptyList<String>()
 
-    override fun getVersion(): String {
-        val versionRegex = Pattern.compile("Concurrent Versions System \\(CVS\\) (?<version>[\\d.]+).+")
+    override fun command(workingDir: File?) = "cvs"
 
-        return getCommandVersion("cvs") {
-            versionRegex.matcher(it.lineSequence().first()).let {
-                if (it.matches()) {
-                    it.group("version")
-                } else {
-                    ""
+    override fun getVersion() =
+            getVersion { output ->
+                versionRegex.matcher(output.lineSequence().first()).let {
+                    if (it.matches()) {
+                        it.group("version")
+                    } else {
+                        ""
+                    }
                 }
             }
-        }
-    }
 
     override fun getWorkingTree(vcsDirectory: File) =
-            object : WorkingTree(vcsDirectory) {
+            object : WorkingTree(vcsDirectory, type) {
                 private val cvsDirectory = File(workingDir, "CVS")
 
                 override fun isValid(): Boolean {
@@ -68,7 +68,7 @@ object Cvs : VersionControlSystem() {
                         return false
                     }
 
-                    return ProcessCapture(workingDir, "cvs", "status", "-l").isSuccess()
+                    return ProcessCapture(workingDir, "cvs", "status", "-l").isSuccess
                 }
 
                 override fun isShallow() = false
@@ -85,7 +85,7 @@ object Cvs : VersionControlSystem() {
                     val cvsLog = run(workingDir, "log", "-h")
 
                     var currentWorkingFile = ""
-                    return cvsLog.stdout().lines().mapNotNull { line ->
+                    return cvsLog.stdout.lines().mapNotNull { line ->
                         var value = line.removePrefix("Working file: ")
                         if (value.length < line.length) {
                             currentWorkingFile = value
@@ -120,10 +120,10 @@ object Cvs : VersionControlSystem() {
                     val cvsLog = run(workingDir, "log", "-h")
                     var tagsSectionStarted = false
 
-                    return cvsLog.stdout().lines().mapNotNull {
+                    return cvsLog.stdout.lines().mapNotNull { line ->
                         if (tagsSectionStarted) {
-                            if (it.startsWith('\t')) {
-                                it.split(':', limit = 2).let {
+                            if (line.startsWith('\t')) {
+                                line.split(':', limit = 2).let {
                                     Pair(it.first().trim(), it.last().trim())
                                 }
                             } else {
@@ -131,7 +131,7 @@ object Cvs : VersionControlSystem() {
                                 null
                             }
                         } else {
-                            if (it == "symbolic names:") {
+                            if (line == "symbolic names:") {
                                 tagsSectionStarted = true
                             }
                             null
@@ -164,11 +164,11 @@ object Cvs : VersionControlSystem() {
                 }
             }
 
-    override fun isApplicableUrl(vcsUrl: String) = vcsUrl.matches("^:(ext|pserver):[^@]+@.+$".toRegex())
+    override fun isApplicableUrlInternal(vcsUrl: String) = vcsUrl.matches("^:(ext|pserver):[^@]+@.+$".toRegex())
 
     override fun download(pkg: Package, targetDir: File, allowMovingRevisions: Boolean,
                           recursive: Boolean): WorkingTree {
-        log.info { "Using $this version ${getVersion()}." }
+        log.info { "Using $type version ${getVersion()}." }
 
         try {
             val path = pkg.vcsProcessed.path.takeUnless { it.isBlank() } ?: "."
@@ -183,12 +183,12 @@ object Cvs : VersionControlSystem() {
                 // Create all working tree directories in order to be able to query the log.
                 run(targetDir, "update", "-d")
 
-                log.info { "Trying to guess a $this revision for version '${pkg.id.version}'." }
+                log.info { "Trying to guess a $type revision for version '${pkg.id.version}'." }
 
                 try {
                     workingTree.guessRevisionName(pkg.id.name, pkg.id.version).also { revision ->
                         log.warn {
-                            "Using guessed $this revision '$revision' for version '${pkg.id.version}'. This might " +
+                            "Using guessed $type revision '$revision' for version '${pkg.id.version}'. This might " +
                                     "cause the downloaded source code to not match the package version."
                         }
                     }
@@ -211,9 +211,7 @@ object Cvs : VersionControlSystem() {
 
             return workingTree
         } catch (e: IOException) {
-            e.showStackTrace()
-
-            throw DownloadException("$this failed to download from URL '${pkg.vcsProcessed.url}'.", e)
+            throw DownloadException("$type failed to download from URL '${pkg.vcsProcessed.url}'.", e)
         }
     }
 }

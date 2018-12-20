@@ -1,10 +1,8 @@
 ---
-allow_dynamic_versions: true
 project:
   id: "Maven:com.here.ort.maven:maven-lib:1.0-SNAPSHOT"
   definition_file_path: "analyzer/src/funTest/assets/projects/synthetic/maven/lib/pom.xml"
   declared_licenses: []
-  aliases: []
   vcs:
     type: ""
     url: ""
@@ -18,26 +16,15 @@ project:
   homepage_url: "http://maven.apache.org"
   scopes:
   - name: "compile"
-    delivered: true
     dependencies:
     - id: "Maven:org.apache.beam:beam-parent:2.3.0"
-      dependencies: []
-      errors: []
     - id: "Maven:org.apache.commons:commons-text:1.1"
       dependencies:
       - id: "Maven:org.apache.commons:commons-lang3:3.5"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:org.jenkins-ci:version-number:1.4"
-      dependencies: []
-      errors: []
   - name: "test"
-    delivered: false
     dependencies:
     - id: "Maven:junit:junit:3.8.1"
-      dependencies: []
-      errors: []
 packages:
 - package:
     id: "Maven:junit:junit:3.8.1"
@@ -170,4 +157,3 @@ packages:
       revision: "version-number-1.4"
       path: ""
   curations: []
-errors: []

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ private const val REPO_REV_FOR_VERSION = "371b23f37da064687518bace268d607a92ecbe
 private const val REPO_PATH_FOR_VERSION = "specs"
 
 class GitDownloadTest : StringSpec() {
+    private val git = Git()
     private lateinit var outputDir: File
 
     override fun beforeTest(description: Description) {
@@ -47,7 +48,7 @@ class GitDownloadTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
@@ -64,7 +65,7 @@ class GitDownloadTest : StringSpec() {
                     "specs"
             )
 
-            val workingTree = Git.download(pkg, outputDir)
+            val workingTree = git.download(pkg, outputDir)
             val actualFiles = workingTree.workingDir.list().sorted()
 
             workingTree.isValid() shouldBe true
@@ -80,7 +81,7 @@ class GitDownloadTest : StringSpec() {
                     File(REPO_PATH, "index.d.ts")
             )
 
-            val workingTree = Git.download(pkg, outputDir)
+            val workingTree = git.download(pkg, outputDir)
             val actualFiles = workingTree.workingDir.walkBottomUp()
                     .onEnter { it.name != ".git" }
                     .filter { it.isFile }
@@ -98,7 +99,7 @@ class GitDownloadTest : StringSpec() {
                     vcsProcessed = VcsInfo("Git", REPO_URL, "")
             )
 
-            val workingTree = Git.download(pkg, outputDir)
+            val workingTree = git.download(pkg, outputDir)
 
             workingTree.isValid() shouldBe true
             workingTree.getRevision() shouldBe REPO_REV_FOR_VERSION
@@ -114,7 +115,7 @@ class GitDownloadTest : StringSpec() {
                     File(REPO_PATH_FOR_VERSION, "dep_graph_spec.js")
             )
 
-            val workingTree = Git.download(pkg, outputDir)
+            val workingTree = git.download(pkg, outputDir)
             val actualFiles = workingTree.workingDir.walkBottomUp()
                     .onEnter { it.name != ".git" }
                     .filter { it.isFile }

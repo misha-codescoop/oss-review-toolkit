@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,56 +19,21 @@
 
 package com.here.ort.utils
 
-import com.here.ort.utils.spdx.calculatePackageVerificationCode
-import com.here.ort.utils.spdx.getLicenseText
-
-import io.kotlintest.matchers.endWith
-import io.kotlintest.matchers.startWith
-import io.kotlintest.should
 import io.kotlintest.shouldBe
 import io.kotlintest.shouldNotBe
-import io.kotlintest.shouldThrow
 import io.kotlintest.specs.WordSpec
 
 import java.io.File
-import java.io.IOException
 import java.nio.file.Paths
 
 class UtilsTest : WordSpec({
-    "calculatePackageVerificationCode" should {
-        "work for given SHA1s" {
-            val sha1sums = listOf(
-                    "0811bcab4e7a186f4d0d08d44cc5f06d721e7f6d",
-                    "f7a535db519cf832c1119fecdf1ea0514f583886",
-                    "0db752599b67b64dd1bdeff77ed9f5aa5437d027",
-                    "9706f99c85a781c016a22fd23313e55257e7b3e8",
-                    "1d96c52b533a38492ce290bc6831f8702f690e8e",
-                    "e77075d2fb2cdeb4406538d9b33d00fd823a527a",
-                    "b2f60873fd2c0feaf21eaccaf7ba052ceb12b146",
-                    "1c2d4960f5d156e444f9819cec0c44c09f98970f",
-                    "ca5fa85664a953084ca9a1de1e393698257495c0",
-                    "0d172bac2b6712ecdc7b1e639c3cf8104f2a6a2a",
-                    "14b6a02753d05f72ac57144f1ea0da52d97a0ce3",
-                    "25306873d3e2434aade745e8a1a6914c215165f6",
-                    "afd495c14035961a55d725ba0127e166349f28b9",
-                    "1b8f69fa87f1abedd02f6c4766f07f0ceeea7a02",
-                    "a4410f034f97b67eccbb8c9596d58c97ad3de988",
-                    "a1663801985f4361395831ae17b3256e38810dc2",
-                    "2a06f5906e5afb1b283b6f4fd6a21e7906cdde4f",
-                    "1a409fc2dcd3dd10549c47793a80c42c3a06c9f0",
-                    "2cc787ebd4d29f2e24646f76f9c525336949783e",
-                    "3ea2f82d7ce6f638e9466365a328a201f2caa579",
-                    "9257afd2d46c3a189ec0d40a45722701d47e9ca5",
-                    "4ff8a82b52e1e1c5f8bf0abb25c20859d3f06c62",
-                    "0e8faebf9505c9b1d5462adcf34e01e83d110cc8",
-                    "824cadd41d399f98d17ae281737c6816846ac75d",
-                    "f54dd0df3ab62f1d5687d98076dffdbf690840f6",
-                    "91742d83b0feadb4595afeb4e7f4bab2e85f4a98",
-                    "64dd561478479f12deda240ae9fe569952328bff",
-                    "310fc965173381a02fbe83a889f7c858c4499862"
-            )
+    "disjoint" should {
+        "return true for collections that have no common elememts" {
+            disjoint(setOf(1), setOf(2), setOf(3)) shouldBe true
+        }
 
-            calculatePackageVerificationCode(sha1sums) shouldBe "1a74d8321c452522ec516a46893e6a42f36b5953"
+        "return false for collections that have common elememts" {
+            disjoint(setOf(1, 2), setOf(2, 3), setOf(3, 4)) shouldBe false
         }
     }
 
@@ -218,18 +183,33 @@ class UtilsTest : WordSpec({
             filterVersionNames("6.9.0", names, "babel-plugin-transform-simplify-comparison-operators")
                     .joinToString("\n") shouldBe "babel-plugin-transform-simplify-comparison-operators@6.9.0"
         }
-    }
 
-    "getLicenseText" should {
-        "return the full license text for a valid license id" {
-            val text = getLicenseText("Apache-2.0").trim()
+        "find names when others with trailing digits are present" {
+            val names = listOf(
+                    "1.11.6", "1.11.60", "1.11.61", "1.11.62", "1.11.63", "1.11.64", "1.11.65", "1.11.66", "1.11.67",
+                    "1.11.68", "1.11.69"
+            )
 
-            text should startWith("Apache License")
-            text should endWith("limitations under the License.")
+            filterVersionNames("1.11.6", names).joinToString("\n") shouldBe "1.11.6"
         }
 
-        "throw an exception for an invalid license id" {
-            shouldThrow<IOException> { getLicenseText("FooBar-1.0") }
+        "find names with only a single revision number as the version" {
+            val names = listOf("my_project-123", "my_project-4711", "my_project-8888")
+
+            filterVersionNames("4711", names).joinToString("\n") shouldBe "my_project-4711"
+        }
+
+        "find names that have a numeric suffix as part of the name" {
+            val names = listOf("my_project_v1-1.0.2", "my_project_v1-1.0.3", "my_project_v1-1.1.0")
+
+            filterVersionNames("1.0.3", names).joinToString("\n") shouldBe "my_project_v1-1.0.3"
+        }
+
+        "find names that use an abbreviated SHA1 as the suffix" {
+            val names = listOf("3.9.0.99-a3d9827", "sdk-3.9.0.99", "v3.9.0.99")
+
+            filterVersionNames("3.9.0.99", names).joinToString("\n") shouldBe
+                    listOf("3.9.0.99-a3d9827", "sdk-3.9.0.99", "v3.9.0.99").joinToString("\n")
         }
     }
 
@@ -285,6 +265,17 @@ class UtilsTest : WordSpec({
                             to "ssh://git@github.com/heremaps/oss-review-toolkit.git",
                     "ssh://user@gerrit.server.com:29418/parent/project"
                             to "ssh://user@gerrit.server.com:29418/parent/project"
+            )
+
+            packages.forEach { actualUrl, expectedUrl ->
+                normalizeVcsUrl(actualUrl) shouldBe expectedUrl
+            }
+        }
+
+        "add missing https:// for GitHub URLs" {
+            val packages = mapOf(
+                    "github.com/leanovate/play-mockws"
+                            to "https://github.com/leanovate/play-mockws.git"
             )
 
             packages.forEach { actualUrl, expectedUrl ->
@@ -394,90 +385,6 @@ class UtilsTest : WordSpec({
             packages.forEach { actualUrl, expectedUrl ->
                 normalizeVcsUrl(actualUrl) shouldBe expectedUrl
             }
-        }
-    }
-
-    "searchUpwardsForSubdirectory" should {
-        "find the root Git directory" {
-            val gitRoot = File(".").searchUpwardsForSubdirectory(".git")
-
-            gitRoot shouldNotBe null
-            gitRoot shouldBe File("..").canonicalFile
-        }
-    }
-
-    "File.safeMkDirs()" should {
-        "should succeed if directory already exists" {
-            val directory = createTempDir()
-            directory.deleteOnExit()
-
-            directory.isDirectory shouldBe true
-            directory.safeMkdirs() // should not throw exception
-            directory.isDirectory shouldBe true // should still be a directory afterwards
-        }
-
-        "should succeed if directory could be created" {
-            val parent = createTempDir()
-            parent.deleteOnExit()
-            val child = File(parent, "child")
-            child.deleteOnExit()
-
-            parent.isDirectory shouldBe true
-            child.safeMkdirs() // should not throw exception
-            child.isDirectory shouldBe true
-        }
-
-        "should succeed if file parent does not yet exist" {
-            // Test case for an unexpected behaviour of File.mkdirs() which returns false for
-            // File(File("parent1/parent2"), "/").mkdirs() if both "parent" directories do not exist, even when the
-            // directory was successfully created.
-            val parent = createTempDir()
-            parent.deleteOnExit()
-            val nonExistingParent = File(parent, "parent1/parent2")
-            nonExistingParent.deleteOnExit()
-            val child = File(nonExistingParent, "/")
-            child.deleteOnExit()
-
-            parent.isDirectory shouldBe true
-            nonExistingParent.exists() shouldBe false
-            child.exists() shouldBe false
-            child.safeMkdirs() // should not throw exception
-            child.isDirectory shouldBe true
-        }
-
-        "should throw exception if file is not a directory" {
-            val file = createTempFile()
-            file.deleteOnExit()
-
-            file.isFile shouldBe true
-            shouldThrow<IOException> { file.safeMkdirs() }
-            file.isFile shouldBe true // should still be a file afterwards
-        }
-    }
-
-    "String.urlencode" should {
-        val str = "project: fünky\$name*>nul."
-
-        "encode '*'" {
-            "*".fileSystemEncode() shouldBe "%2A"
-        }
-
-        "encode '.'" {
-            ".".fileSystemEncode() shouldBe "%2E"
-        }
-
-        "encode ':'" {
-            ":".fileSystemEncode() shouldBe "%3A"
-        }
-
-        "create a valid file name" {
-            val tempDir = createTempDir()
-            val fileFromStr = File(tempDir, str.fileSystemEncode()).apply { writeText("dummy") }
-
-            fileFromStr.isFile shouldBe true
-
-            // This should not throw an IOException.
-            tempDir.safeDeleteRecursively()
         }
     }
 })

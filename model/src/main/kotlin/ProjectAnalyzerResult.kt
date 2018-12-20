@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 
 package com.here.ort.model
 
-import com.fasterxml.jackson.annotation.JsonAlias
+import com.fasterxml.jackson.annotation.JsonInclude
 
 import java.util.SortedSet
 
@@ -27,15 +27,6 @@ import java.util.SortedSet
  * A class that bundles all information generated during an analysis.
  */
 data class ProjectAnalyzerResult(
-        /**
-         * If dynamic versions were allowed during the dependency resolution. If true it means that the dependency tree
-         * might change with another scan if any of the (transitive) dependencies is declared with a version range and
-         * a new version of this dependency was released in the meantime. It is always true for package managers that do
-         * not support lock files, but do support version ranges.
-         */
-        @JsonAlias("allowDynamicVersions")
-        val allowDynamicVersions: Boolean,
-
         /**
          * The project that was analyzed. The tree of dependencies is implicitly contained in the scopes in the form
          * of package references.
@@ -50,20 +41,24 @@ data class ProjectAnalyzerResult(
         /**
          * The list of errors that occurred during dependency resolution. Defaults to an empty list.
          */
-        val errors: List<String> = emptyList()
+        // Do not serialize if empty for consistency with the error properties in other classes, even if this class is
+        // not serialized as part of an [OrtResult].
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val errors: List<OrtIssue> = emptyList()
 ) {
-    /**
-     * Return true if there were any errors during the analysis, false otherwise.
-     */
-    fun hasErrors(): Boolean {
-        fun hasErrors(pkgReference: PackageReference): Boolean =
-                pkgReference.errors.isNotEmpty() || pkgReference.dependencies.any { hasErrors(it) }
+    init {
+        // Perform a sanity check to ensure we have no references to non-existing packages.
+        val packageIds = packages.map { it.pkg.id }
+        val referencedIds = project.collectDependencies(includeErroneous = false).map { it.id }
 
-        return errors.isNotEmpty() || project.scopes.any { it.dependencies.any { hasErrors(it) } }
+        // Note that not all packageIds have to be contained in the referencedIds, e.g. for NPM optional dependencies.
+        require(packageIds.containsAll(referencedIds)) {
+            "The following references do not actually refer to packages: ${referencedIds - packageIds}."
+        }
     }
 
-    fun collectErrors(): Map<Identifier, List<String>> {
-        val collectedErrors = mutableMapOf<Identifier, MutableList<String>>()
+    fun collectErrors(): Map<Identifier, List<OrtIssue>> {
+        val collectedErrors = mutableMapOf<Identifier, MutableList<OrtIssue>>()
 
         fun addErrors(pkgReference: PackageReference) {
             val errorsForPkg = collectedErrors.getOrPut(pkgReference.id) { mutableListOf() }
@@ -72,11 +67,13 @@ data class ProjectAnalyzerResult(
             pkgReference.dependencies.forEach { addErrors(it) }
         }
 
-        project.scopes.forEach {
-            it.dependencies.forEach { addErrors(it) }
+        for (scope in project.scopes) {
+            for (dependency in scope.dependencies) {
+                addErrors(dependency)
+            }
         }
 
-        return mutableMapOf<Identifier, List<String>>().apply {
+        return mutableMapOf<Identifier, List<OrtIssue>>().apply {
             if (errors.isNotEmpty()) {
                 this[project.id] = errors.toMutableList()
             }

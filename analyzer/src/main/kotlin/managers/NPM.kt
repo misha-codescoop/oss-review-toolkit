@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,12 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 
-import com.here.ort.analyzer.Main
+import com.here.ort.analyzer.AbstractPackageManagerFactory
+import com.here.ort.analyzer.HTTP_CACHE_PATH
+import com.here.ort.analyzer.PackageJsonUtils
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.model.OrtIssue
 import com.here.ort.model.HashAlgorithm
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
@@ -37,14 +39,19 @@ import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.Scope
 import com.here.ort.model.VcsInfo
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
 import com.here.ort.model.jsonMapper
+import com.here.ort.model.readValue
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.OS
 import com.here.ort.utils.OkHttpClientHelper
-import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.textValueOrEmpty
-import com.here.ort.utils.checkCommandVersion
+import com.here.ort.utils.hasFragmentRevision
 import com.here.ort.utils.log
-import com.here.ort.utils.safeDeleteRecursively
+import com.here.ort.utils.realFile
+import com.here.ort.utils.stashDirectories
+import com.here.ort.utils.textValueOrEmpty
+import com.here.ort.utils.toHexString
 
 import com.vdurmont.semver4j.Requirement
 
@@ -54,23 +61,17 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URLEncoder
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.util.Base64
 import java.util.SortedSet
 
 import okhttp3.Request
 
-@Suppress("LargeClass", "TooManyFunctions")
-open class NPM : PackageManager() {
-    companion object : PackageManagerFactory<NPM>(
-            "https://www.npmjs.com/",
-            "JavaScript",
-            listOf("package.json")
-    ) {
-        private const val DEFINITELY_TYPED_VCS_URL = "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
-
-        override fun create() = NPM()
-
+/**
+ * The Node package manager for JavaScript, see https://www.npmjs.com/.
+ */
+open class NPM(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig), CommandLineTool {
+    companion object {
         /**
          * Expand NPM shortcuts for URLs to hosting sites to full URLs so that they can be used in a regular way.
          *
@@ -91,15 +92,18 @@ open class NPM : PackageManager() {
             val path = uri.schemeSpecificPart
 
             // Do not mess with crazy URLs.
-            if (path.startsWith("git@") || path.startsWith("github.com")) return url
+            if (path.startsWith("git@") || path.startsWith("github.com") || path.startsWith("gitlab.com")) return url
 
-            return if (!path.isNullOrEmpty() && listOf(uri.authority, uri.query, uri.fragment).all { it == null }) {
+            return if (!path.isNullOrEmpty() && listOf(uri.authority, uri.query).all { it == null }) {
+                // See https://docs.npmjs.com/files/package.json#github-urls.
+                val revision = if (uri.hasFragmentRevision()) "#${uri.fragment}" else ""
+
                 // See https://docs.npmjs.com/files/package.json#repository.
                 when (uri.scheme) {
-                    null -> "https://github.com/$path.git"
-                    "gist" -> "https://gist.github.com/$path"
-                    "bitbucket" -> "https://bitbucket.org/$path.git"
-                    "gitlab" -> "https://gitlab.com/$path.git"
+                    null -> "https://github.com/$path.git$revision"
+                    "gist" -> "https://gist.github.com/$path$revision"
+                    "bitbucket" -> "https://bitbucket.org/$path.git$revision"
+                    "gitlab" -> "https://gitlab.com/$path.git$revision"
                     else -> url
                 }
             } else {
@@ -108,38 +112,31 @@ open class NPM : PackageManager() {
         }
     }
 
-    protected open val recognizedLockFiles = listOf("npm-shrinkwrap.json", "package-lock.json")
+    class Factory : AbstractPackageManagerFactory<NPM>() {
+        override val globsForDefinitionFiles = listOf("package.json")
 
-    override fun command(workingDir: File) = if (OS.isWindows) { "npm.cmd" } else { "npm" }
-
-    override fun toString() = NPM.toString()
-
-    override fun prepareResolution(definitionFiles: List<File>): List<File> {
-        var workingDir = definitionFiles.first().parentFile
-
-        // We do not actually depend on any features specific to an NPM version, but we still want to stick to a fixed
-        // minor version to be sure to get consistent results.
-        checkCommandVersion(command(workingDir), Requirement.buildIvy("5.5.+"),
-                ignoreActualVersion = Main.ignoreVersions)
-
-        return definitionFiles
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                NPM(analyzerConfig, repoConfig)
     }
+
+    protected open fun hasLockFile(projectDir: File) = PackageJsonUtils.hasNpmLockFile(projectDir)
+
+    override fun command(workingDir: File?) = if (OS.isWindows) "npm.cmd" else "npm"
+
+    override fun getVersionRequirement(): Requirement = Requirement.buildNPM("5.7.* - 6.4.*")
+
+    override fun mapDefinitionFiles(definitionFiles: List<File>) =
+            PackageJsonUtils.mapDefinitionFilesForNpm(definitionFiles).toList()
+
+    override fun prepareResolution(definitionFiles: List<File>) =
+            // We do not actually depend on any features specific to an NPM version, but we still want to stick to a
+            // fixed minor version to be sure to get consistent results.
+            checkVersion(ignoreActualVersion = analyzerConfig.ignoreToolVersions)
 
     override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
         val workingDir = definitionFile.parentFile
-        val modulesDir = File(workingDir, "node_modules")
 
-        var tempModulesDir: File? = null
-        try {
-            // Temporarily move away any existing "node_modules" directory within the same filesystem to ensure
-            // the move can be performed atomically.
-            if (modulesDir.isDirectory) {
-                val tempDir = createTempDir(Main.TOOL_NAME, ".tmp", workingDir)
-                tempModulesDir = File(tempDir, "node_modules")
-                log.warn { "'$modulesDir' already exists, temporarily moving it to '$tempModulesDir'." }
-                Files.move(modulesDir.toPath(), tempModulesDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
-            }
-
+        stashDirectories(File(workingDir, "node_modules")).use {
             // Actually installing the dependencies is the easiest way to get the meta-data of all transitive
             // dependencies (i.e. their respective "package.json" files). As NPM uses a global cache, the same
             // dependency is only ever downloaded once.
@@ -147,28 +144,20 @@ open class NPM : PackageManager() {
 
             val packages = parseInstalledModules(workingDir)
 
-            val dependencies = Scope("dependencies", true,
-                    parseDependencies(definitionFile, "dependencies", packages))
-            val devDependencies = Scope("devDependencies", false,
-                    parseDependencies(definitionFile, "devDependencies", packages))
+            // Optional dependencies are just like regular dependencies except that NPM ignores failures when installing
+            // them (see https://docs.npmjs.com/files/package.json#optionaldependencies), i.e. they are not a separate
+            // scope in our semantics.
+            val dependencies = parseDependencies(definitionFile, "dependencies", packages) +
+                    parseDependencies(definitionFile, "optionalDependencies", packages)
+            val dependenciesScope = Scope("dependencies", dependencies.toSortedSet())
 
-            // TODO: add support for peerDependencies, bundledDependencies, and optionalDependencies.
+            val devDependencies = parseDependencies(definitionFile, "devDependencies", packages)
+            val devDependenciesScope = Scope("devDependencies", devDependencies)
 
-            return parseProject(definitionFile, sortedSetOf(dependencies, devDependencies),
+            // TODO: add support for peerDependencies and bundledDependencies.
+
+            return parseProject(definitionFile, sortedSetOf(dependenciesScope, devDependenciesScope),
                     packages.values.toSortedSet())
-        } finally {
-            // Delete node_modules folder to not pollute the scan.
-            log.info { "Deleting temporary '$modulesDir'..." }
-            modulesDir.safeDeleteRecursively()
-
-            // Restore any previously existing "node_modules" directory.
-            if (tempModulesDir != null) {
-                log.info { "Restoring original '$modulesDir' directory from '$tempModulesDir'..." }
-                Files.move(tempModulesDir.toPath(), modulesDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
-                if (!tempModulesDir.parentFile.delete()) {
-                    throw IOException("Unable to delete the '${tempModulesDir.parent}' directory.")
-                }
-            }
         }
     }
 
@@ -176,15 +165,25 @@ open class NPM : PackageManager() {
         val packages = mutableMapOf<String, Package>()
         val nodeModulesDir = File(rootDirectory, "node_modules")
 
-        log.info { "Searching for package.json files in ${nodeModulesDir.absolutePath}..." }
+        log.info { "Searching for 'package.json' files in '${nodeModulesDir.absolutePath}'..." }
 
         nodeModulesDir.walkTopDown().filter {
             it.name == "package.json" && isValidNodeModulesDirectory(nodeModulesDir, nodeModulesDirForPackageJson(it))
         }.forEach {
-            log.debug { "Found module: ${it.absolutePath}" }
+            val packageDir = it.absoluteFile.parentFile
+            val realPackageDir = packageDir.realFile()
+            val isSymbolicPackageDir = packageDir != realPackageDir
 
-            @Suppress("UnsafeCast")
-            val json = jsonMapper.readTree(it) as ObjectNode
+            log.debug {
+                val prefix = "Found a 'package.json' file in '$packageDir'"
+                if (isSymbolicPackageDir) {
+                    "$prefix which links to '$realPackageDir'."
+                } else {
+                    "$prefix."
+                }
+            }
+
+            val json = it.readValue<ObjectNode>()
             val rawName = json["name"].textValue()
             val (namespace, name) = splitNamespaceAndName(rawName)
             val version = json["version"].textValue()
@@ -203,62 +202,95 @@ open class NPM : PackageManager() {
             var description = json["description"].textValueOrEmpty()
             var homepageUrl = json["homepage"].textValueOrEmpty()
             var downloadUrl = json["_resolved"].textValueOrEmpty()
-            var hash = json["_integrity"].textValueOrEmpty()
+
             var vcsFromPackage = parseVcsInfo(json)
 
-            val hashAlgorithm = HashAlgorithm.SHA1
             val identifier = "$rawName@$version"
+
+            var hash = json["_integrity"].textValueOrEmpty()
+            val splitHash = hash.split('-')
+
+            var hashAlgorithm = when {
+                splitHash.count() == 2 -> {
+                    // Support Subresource Integrity (SRI) hashes, see
+                    // https://w3c.github.io/webappsec-subresource-integrity/
+                    hash = Base64.getDecoder().decode(splitHash.last()).toHexString()
+                    HashAlgorithm.fromString(splitHash.first())
+                }
+                hash.isNotEmpty() -> HashAlgorithm.SHA1
+                else -> HashAlgorithm.UNKNOWN
+            }
 
             // Download package info from registry.npmjs.org.
             // TODO: check if unpkg.com can be used as a fallback in case npmjs.org is down.
-            log.debug { "Retrieving package info for $identifier" }
+            log.debug { "Retrieving package info for '$identifier'." }
             val encodedName = if (rawName.startsWith("@")) {
                 "@${URLEncoder.encode(rawName.substringAfter("@"), "UTF-8")}"
             } else {
                 rawName
             }
 
-            val pkgRequest = Request.Builder()
-                    .get()
-                    .url("https://registry.npmjs.org/$encodedName")
-                    .build()
+            if (isSymbolicPackageDir) {
+                val vcsFromDirectory = VersionControlSystem.forDirectory(realPackageDir)?.getInfo() ?: VcsInfo.EMPTY
+                vcsFromPackage = vcsFromPackage.merge(vcsFromDirectory)
+            } else {
+                val pkgRequest = Request.Builder()
+                        .get()
+                        .url("https://registry.npmjs.org/$encodedName")
+                        .build()
 
-            OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, pkgRequest).use { response ->
-                if (response.code() == HttpURLConnection.HTTP_OK) {
-                    log.debug {
-                        if (response.cacheResponse() != null) {
-                            "Retrieved info about $encodedName from local cache."
-                        } else {
-                            "Downloaded info about $encodedName from NPM registry."
-                        }
-                    }
-
-                    response.body()?.let { body ->
-                        val packageInfo = jsonMapper.readTree(body.string())
-
-                        packageInfo["versions"][version]?.let { versionInfo ->
-                            description = versionInfo["description"].textValueOrEmpty()
-                            homepageUrl = versionInfo["homepage"].textValueOrEmpty()
-
-                            versionInfo["dist"]?.let { dist ->
-                                downloadUrl = dist["tarball"].textValueOrEmpty()
-                                hash = dist["shasum"].textValueOrEmpty()
+                OkHttpClientHelper.execute(HTTP_CACHE_PATH, pkgRequest).use { response ->
+                    if (response.code() == HttpURLConnection.HTTP_OK) {
+                        log.debug {
+                            if (response.cacheResponse() != null) {
+                                "Retrieved info about '$encodedName' from local cache."
+                            } else {
+                                "Downloaded info about '$encodedName' from NPM registry."
                             }
-
-                            vcsFromPackage = parseVcsInfo(versionInfo)
                         }
-                    }
-                } else {
-                    log.info {
-                        "Could not retrieve package information for '$encodedName' " +
-                                "from public NPM registry: ${response.code()} - ${response.message()}"
+
+                        response.body()?.let { body ->
+                            val packageInfo = jsonMapper.readTree(body.string())
+
+                            packageInfo["versions"][version]?.let { versionInfo ->
+                                description = versionInfo["description"].textValueOrEmpty()
+                                homepageUrl = versionInfo["homepage"].textValueOrEmpty()
+
+                                versionInfo["dist"]?.let { dist ->
+                                    downloadUrl = dist["tarball"].textValueOrEmpty().let { tarballUrl ->
+                                        if (tarballUrl.startsWith("http://registry.npmjs.org/")) {
+                                            // Work around the issue described at
+                                            // https://npm.community/t/some-packages-have-dist-tarball-as-http-and-not-https/285/19.
+                                            "https://" + tarballUrl.removePrefix("http://")
+                                        } else {
+                                            tarballUrl
+                                        }
+                                    }
+
+                                    hash = dist["shasum"].textValueOrEmpty()
+                                    hashAlgorithm = HashAlgorithm.fromHash(hash)
+                                }
+
+                                vcsFromPackage = parseVcsInfo(versionInfo)
+                            }
+                        }
+                    } else {
+                        log.info {
+                            "Could not retrieve package information for '$encodedName' " +
+                                    "from public NPM registry: ${response.message()} (code ${response.code()})."
+                        }
                     }
                 }
             }
 
+            val vcsDownloadUrl = VersionControlSystem.splitUrl(expandShortcutURL(downloadUrl))
+            if (vcsDownloadUrl.url != downloadUrl) {
+                vcsFromPackage = vcsFromPackage.merge(vcsDownloadUrl)
+            }
+
             val module = Package(
                     id = Identifier(
-                            provider = NPM.toString(),
+                            type = "NPM",
                             namespace = namespace,
                             name = name,
                             version = version
@@ -266,12 +298,12 @@ open class NPM : PackageManager() {
                     declaredLicenses = declaredLicenses,
                     description = description,
                     homepageUrl = homepageUrl,
-                    binaryArtifact = RemoteArtifact(
+                    binaryArtifact = RemoteArtifact.EMPTY,
+                    sourceArtifact = RemoteArtifact(
                             url = downloadUrl,
                             hash = hash,
                             hashAlgorithm = hashAlgorithm
                     ),
-                    sourceArtifact = RemoteArtifact.EMPTY,
                     vcs = vcsFromPackage,
                     vcsProcessed = processPackageVcs(vcsFromPackage, homepageUrl)
             )
@@ -284,20 +316,7 @@ open class NPM : PackageManager() {
                 "Generated package info for $identifier has no version."
             }
 
-            // For TypeScript definitions there is no way to get the Git revision of the type definitions for a
-            // particular NPM package version. The DefinitelyTyped project only uses a directory hierarchy of
-            // "types/<package name>" without a version, and there are no tags in Git. See e.g.
-            // https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/chai
-            // TODO: Think about how this can be turned into a generic curation.
-            packages[identifier] = if (module.id.namespace == "@types"
-                    && module.vcsProcessed.url == DEFINITELY_TYPED_VCS_URL) {
-                // Clear the VCS URL to directly trigger source artifact download and use the binary artifact as the
-                // source artifact.
-                log.info { "Falling back to source artifact for TypeScript type definition package '${module.id}'." }
-                module.copy(sourceArtifact = module.binaryArtifact, vcsProcessed = VcsInfo.EMPTY)
-            } else {
-                module
-            }
+            packages[identifier] = module
         }
 
         return packages
@@ -337,17 +356,15 @@ open class NPM : PackageManager() {
         // Read package.json
         val json = jsonMapper.readTree(packageJson)
         val dependencies = sortedSetOf<PackageReference>()
-        if (json[scope] != null) {
-            log.debug { "Looking for dependencies in scope $scope" }
-            val dependencyMap = json[scope]
+        json[scope]?.let { dependencyMap ->
+            log.debug { "Looking for dependencies in scope '$scope'." }
             dependencyMap.fields().forEach { (name, _) ->
-                buildTree(packageJson.parentFile, packageJson.parentFile, name, packages)?.let { dependency ->
+                val modulesDir = packageJson.resolveSibling("node_modules")
+                buildTree(modulesDir, modulesDir, name, packages)?.let { dependency ->
                     dependencies += dependency
                 }
             }
-        } else {
-            log.debug { "Could not find scope $scope in ${packageJson.absolutePath}" }
-        }
+        } ?: log.debug { "Could not find scope '$scope' in '${packageJson.absolutePath}'." }
 
         return dependencies
     }
@@ -363,16 +380,14 @@ open class NPM : PackageManager() {
         } ?: VcsInfo("", "", head)
     }
 
-    private fun buildTree(rootDir: File, startDir: File, name: String, packages: Map<String, Package>,
+    private fun buildTree(rootModulesDir: File, startModulesDir: File, name: String, packages: Map<String, Package>,
                           dependencyBranch: List<String> = listOf()): PackageReference? {
-        log.debug { "Building dependency tree for $name from directory ${startDir.absolutePath}" }
+        log.debug { "Building dependency tree for '$name' from directory '${startModulesDir.absolutePath}'." }
 
-        val nodeModulesDir = File(startDir, "node_modules")
-        val moduleDir = File(nodeModulesDir, name)
-        val packageFile = File(moduleDir, "package.json")
+        val packageFile = startModulesDir.resolve(name).resolve("package.json")
 
         if (packageFile.isFile) {
-            log.debug { "Found package file for module $name: ${packageFile.absolutePath}" }
+            log.debug { "Found package file for module '$name' at '${packageFile.absolutePath}'." }
 
             val packageJson = jsonMapper.readTree(packageFile)
             val rawName = packageJson["name"].textValue()
@@ -381,52 +396,59 @@ open class NPM : PackageManager() {
 
             if (identifier in dependencyBranch) {
                 log.debug {
-                    "Not adding circular dependency $identifier to the tree, it is already on this branch of the " +
-                            "dependency tree: ${dependencyBranch.joinToString(" -> ")}"
+                    "Not adding circular dependency '$identifier' to the tree, it is already on this branch of the " +
+                            "dependency tree: ${dependencyBranch.joinToString(" -> ")}."
                 }
                 return null
             }
 
-            val newDependencyBranch = dependencyBranch + identifier
-            val packageInfo = packages[identifier]
-                    ?: throw IOException("Could not find package info for $identifier")
             val dependencies = sortedSetOf<PackageReference>()
 
-            if (packageJson["dependencies"] != null) {
-                val dependencyMap = packageJson["dependencies"]
-                dependencyMap.fields().forEach { (dependencyName, _) ->
-                    val dependency = buildTree(rootDir, packageFile.parentFile, dependencyName, packages,
-                            newDependencyBranch)
-                    if (dependency != null) {
-                        dependencies += dependency
-                    }
-                }
+            val dependencyNames = mutableSetOf<String>()
+            packageJson["dependencies"]?.fieldNames()?.forEach { dependencyNames += it }
+            packageJson["optionalDependencies"]?.fieldNames()?.forEach { dependencyNames += it }
+
+            val newDependencyBranch = dependencyBranch + identifier
+            dependencyNames.forEach { dependencyName ->
+                buildTree(rootModulesDir, packageFile.resolveSibling("node_modules"),
+                        dependencyName, packages, newDependencyBranch)?.let { dependencies += it }
             }
 
-            return packageInfo.toReference(dependencies)
-        } else if (rootDir == startDir) {
-            log.error { "Could not find module $name" }
-            return PackageReference(Identifier(toString(), "", name, "unknown, package not installed"), sortedSetOf())
+            val packageInfo = packages[identifier]
+                    ?: throw IOException("Could not find package info for $identifier")
+            return packageInfo.toReference(dependencies = dependencies)
+        } else if (rootModulesDir == startModulesDir) {
+            log.warn {
+                "Could not find package file for '$name' anywhere in '${rootModulesDir.absolutePath}'. This might be " +
+                        "fine if the module was not installed because it is specific to a different platform."
+            }
+
+            val id = Identifier(toString(), "", name, "")
+            val issue = OrtIssue(source = toString(), message = "Package '$name' was not installed.")
+            return PackageReference(id, errors = listOf(issue))
         } else {
-            var parent = startDir.parentFile.parentFile
+            // Skip the package name directory when going up.
+            var parentModulesDir = startModulesDir.parentFile.parentFile
 
-            // For scoped packages we need to go one more dir up.
-            if (parent.name == "node_modules") {
-                parent = parent.parentFile
+            // For scoped packages we need to go one more directory up.
+            if (parentModulesDir.name.startsWith("@")) {
+                parentModulesDir = parentModulesDir.parentFile
             }
 
-            log.debug {
-                "Could not find package file for $name in ${startDir.absolutePath}, looking in " +
-                        "${parent.absolutePath} instead"
+            // E.g. when using Yarn workspaces, the dependencies of the projects are consolidated in a single top-level
+            // "node_modules" directory for de-duplication, so go up.
+            log.info {
+                "Could not find package file for '$name' in '${startModulesDir.absolutePath}', looking in " +
+                        "'${parentModulesDir.absolutePath}' instead."
             }
 
-            return buildTree(rootDir, parent, name, packages, dependencyBranch)
+            return buildTree(rootModulesDir, parentModulesDir, name, packages, dependencyBranch)
         }
     }
 
     private fun parseProject(packageJson: File, scopes: SortedSet<Scope>, packages: SortedSet<Package>)
             : ProjectAnalyzerResult {
-        log.debug { "Parsing project info from ${packageJson.absolutePath}." }
+        log.debug { "Parsing project info from '${packageJson.absolutePath}'." }
 
         val json = jsonMapper.readTree(packageJson)
 
@@ -454,47 +476,38 @@ open class NPM : PackageManager() {
 
         val project = Project(
                 id = Identifier(
-                        provider = toString(),
+                        type = toString(),
                         namespace = namespace,
                         name = name,
                         version = version
                 ),
+                definitionFilePath = VersionControlSystem.getPathInfo(packageJson).path,
                 declaredLicenses = declaredLicenses,
-                definitionFilePath = VersionControlSystem.getPathToRoot(packageJson) ?: "",
-                aliases = emptyList(),
                 vcs = vcsFromPackage,
                 vcsProcessed = processProjectVcs(projectDir, vcsFromPackage, homepageUrl),
                 homepageUrl = homepageUrl,
                 scopes = scopes
         )
 
-        return ProjectAnalyzerResult(Main.allowDynamicVersions, project,
-                packages.map { it.toCuratedPackage() }.toSortedSet())
+        return ProjectAnalyzerResult(project, packages.map { it.toCuratedPackage() }.toSortedSet())
     }
 
     /**
      * Install dependencies using the given package manager command.
      */
     private fun installDependencies(workingDir: File) {
-        if (!Main.allowDynamicVersions) {
-            val lockFiles = recognizedLockFiles.filter {
-                File(workingDir, it).isFile
-            }
-
-            when (lockFiles.size) {
-                0 -> throw IllegalArgumentException(
-                        "No lockfile found in '${workingDir.invariantSeparatorsPath}'. This potentially results in " +
-                        "unstable versions of dependencies. To allow this, enable support for dynamic versions."
-                )
-                else -> log.debug { "Found the following lockfile(s): $lockFiles." }
-            }
+        if (!hasLockFile(workingDir) && !analyzerConfig.allowDynamicVersions) {
+            throw IllegalArgumentException("No lockfile found in '${workingDir.invariantSeparatorsPath}'. This " +
+                    "potentially results in unstable versions of dependencies. To allow this, enable support for " +
+                    "dynamic versions.")
         }
 
-        val managerCommand = command(workingDir)
-        log.debug { "Using '$managerCommand' to install $NPM dependencies." }
-
         // Install all NPM dependencies to enable NPM to list dependencies.
-        ProcessCapture(workingDir, managerCommand, "install", "--ignore-scripts").requireSuccess()
+        if (hasLockFile(workingDir) && this::class.java == NPM::class.java) {
+            run(workingDir, "ci")
+        } else {
+            run(workingDir, "install", "--ignore-scripts")
+        }
 
         // TODO: capture warnings from npm output, e.g. "Unsupported platform" which happens for fsevents on all
         // platforms except for Mac.

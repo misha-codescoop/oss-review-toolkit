@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,52 +19,52 @@
 
 package com.here.ort.analyzer.managers
 
-import com.here.ort.analyzer.Main
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.AbstractPackageManagerFactory
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.Identifier
 import com.here.ort.model.Project
 import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.VcsInfo
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
 
 import java.io.File
 
 /**
  * A fake [PackageManager] for projects that do not use any of the known package managers.
  */
-class Unmanaged : PackageManager() {
-    companion object : PackageManagerFactory<Unmanaged>("", "", emptyList()) {
-        override fun create() = Unmanaged()
+class Unmanaged(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig) {
+    class Factory : AbstractPackageManagerFactory<Unmanaged>() {
+        override val globsForDefinitionFiles = emptyList<String>()
+
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                Unmanaged(analyzerConfig, repoConfig)
     }
 
-    override fun command(workingDir: File) = throw NotImplementedError()
-
-    override fun toString() = Unmanaged.toString()
-
     /**
-     * Returns an [ProjectAnalyzerResult] containing a [Project] for the passed [definitionFile], but does not perform
-     * any dependency resolution.
+     * Return a [ProjectAnalyzerResult] for the [Project] contained in the [definitionFile] directory, but does not
+     * perform any dependency resolution.
      *
-     * @param definitionFile The directory to create the project for.
+     * @param definitionFile The directory containing the unmanaged project.
      */
     override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
         val project = Project(
                 id = Identifier(
-                        provider = toString(),
+                        type = toString(),
                         namespace = "",
                         name = definitionFile.name,
                         version = ""
                 ),
-                definitionFilePath = VersionControlSystem.getPathToRoot(definitionFile) ?: "",
+                definitionFilePath = "",
                 declaredLicenses = sortedSetOf(),
-                aliases = emptyList(),
                 vcs = VcsInfo.EMPTY,
-                vcsProcessed = processProjectVcs(definitionFile),
+                vcsProcessed = VersionControlSystem.getCloneInfo(definitionFile),
                 homepageUrl = "",
                 scopes = sortedSetOf()
         )
 
-        return ProjectAnalyzerResult(Main.allowDynamicVersions, project, sortedSetOf())
+        return ProjectAnalyzerResult(project, sortedSetOf())
     }
 }

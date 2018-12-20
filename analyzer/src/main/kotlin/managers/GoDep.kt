@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,24 +19,29 @@
 
 package com.here.ort.analyzer.managers
 
-import ch.frankel.slf4k.debug
-import ch.frankel.slf4k.warn
+import ch.frankel.slf4k.*
 
-import com.here.ort.analyzer.Main
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.AbstractPackageManagerFactory
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.model.OrtIssue
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
+import com.here.ort.model.PackageLinkage
 import com.here.ort.model.PackageReference
 import com.here.ort.model.Project
 import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.Scope
 import com.here.ort.model.VcsInfo
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.ProcessCapture
+import com.here.ort.utils.collectMessagesAsString
 import com.here.ort.utils.log
 import com.here.ort.utils.safeDeleteRecursively
+import com.here.ort.utils.showStackTrace
 
 import com.moandjiezana.toml.Toml
 
@@ -45,26 +50,24 @@ import java.io.IOException
 import java.net.URI
 import java.nio.file.Paths
 
-class GoDep : PackageManager() {
-    companion object : PackageManagerFactory<GoDep>(
-            "https://golang.github.io/dep/",
-            "Go",
-            // FIXME DRY names of legacy manifest files
-            listOf("Gopkg.toml", "glide.yaml", "Godeps.json")
-    ) {
-        private const val NO_LOCKFILE = "NO_LOCKFILE"
+val GO_LEGACY_MANIFESTS = mapOf(
+        "glide.yaml" to "glide.lock",
+        "Godeps.json" to null
+)
 
-        private val LEGACY_MANIFESTS = mapOf(
-                "glide.yaml" to "glide.lock",
-                "Godeps.json" to NO_LOCKFILE
-        )
+/**
+ * The Dep package manager for Go, see https://golang.github.io/dep/.
+ */
+class GoDep(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig), CommandLineTool {
+    class Factory : AbstractPackageManagerFactory<GoDep>() {
+        override val globsForDefinitionFiles = listOf("Gopkg.toml", *GO_LEGACY_MANIFESTS.keys.toTypedArray())
 
-        override fun create() = GoDep()
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                GoDep(analyzerConfig, repoConfig)
     }
 
-    override fun command(workingDir: File) = "dep"
-
-    override fun toString() = GoDep.toString()
+    override fun command(workingDir: File?) = "dep"
 
     override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
         val projectDir = resolveProjectRoot(definitionFile)
@@ -72,14 +75,14 @@ class GoDep : PackageManager() {
         val gopath = createTempDir(projectDir.name.padEnd(3, '_'), "_gopath")
         val workingDir = setUpWorkspace(projectDir, projectVcs, gopath)
 
-        if (definitionFile.name in LEGACY_MANIFESTS.keys) {
+        if (definitionFile.name in GO_LEGACY_MANIFESTS.keys) {
             importLegacyManifest(definitionFile, projectDir, workingDir, gopath)
         }
 
         val projects = parseProjects(workingDir, gopath)
-        val packages: MutableList<Package> = mutableListOf()
-        val packageRefs: MutableList<PackageReference> = mutableListOf()
-        val provider = toString()
+        val packages = mutableListOf<Package>()
+        val packageRefs = mutableListOf<PackageReference>()
+        val packageType = toString()
 
         for (project in projects) {
             // parseProjects() made sure that all entries contain these keys
@@ -87,47 +90,45 @@ class GoDep : PackageManager() {
             val revision = project["revision"]!!
             val version = project["version"]!!
 
-            val vcs = VcsInfo(provider, name, revision)
-            val errors: MutableList<String> = mutableListOf()
+            val errors = mutableListOf<OrtIssue>()
 
             val vcsProcessed = try {
-                resolveVcsInfo(vcs, gopath)
+                resolveVcsInfo(name, revision, gopath)
             } catch (e: IOException) {
-                errors += e.toString()
+                e.showStackTrace()
+
+                log.error { "Could not resolve VCS information for project '$name': ${e.collectMessagesAsString()}" }
+
+                errors += OrtIssue(source = toString(), message = e.collectMessagesAsString())
                 VcsInfo.EMPTY
             }
 
             val pkg = Package(
-                    id = Identifier(provider, "", name, version),
+                    id = Identifier(packageType, "", name, version),
                     declaredLicenses = sortedSetOf(),
                     description = "",
                     homepageUrl = "",
                     binaryArtifact = RemoteArtifact.EMPTY,
                     sourceArtifact = RemoteArtifact.EMPTY,
-                    vcs = vcs,
+                    vcs = VcsInfo.EMPTY,
                     vcsProcessed = vcsProcessed
             )
 
             packages += pkg
 
-            packageRefs += PackageReference(
-                    id = Identifier(provider, "", pkg.id.name, pkg.id.version),
-                    dependencies = sortedSetOf(),
-                    errors = errors)
+            packageRefs += pkg.toReference(linkage = PackageLinkage.STATIC, errors = errors)
         }
 
-        val scope = Scope("default", true, packageRefs.toSortedSet())
+        val scope = Scope("default", packageRefs.toSortedSet())
 
         // TODO Keeping this between scans would speed things up considerably.
-        gopath.safeDeleteRecursively()
+        gopath.safeDeleteRecursively(force = true)
 
         return ProjectAnalyzerResult(
-                allowDynamicVersions = Main.allowDynamicVersions,
                 project = Project(
-                        id = Identifier(provider, "", projectDir.name, projectVcs.revision),
-                        definitionFilePath = VersionControlSystem.getPathToRoot(definitionFile) ?: "",
+                        id = Identifier(packageType, "", projectDir.name, projectVcs.revision),
+                        definitionFilePath = VersionControlSystem.getPathInfo(definitionFile).path,
                         declaredLicenses = sortedSetOf(),
-                        aliases = emptyList(),
                         vcs = VcsInfo.EMPTY,
                         vcsProcessed = projectVcs,
                         homepageUrl = "",
@@ -139,11 +140,11 @@ class GoDep : PackageManager() {
 
     fun deduceImportPath(projectDir: File, vcs: VcsInfo, gopath: File): File {
         if (vcs == VcsInfo.EMPTY) {
-            return Paths.get(gopath.path, "src", projectDir.name).toFile().canonicalFile
+            return Paths.get(gopath.path, "src", projectDir.name).toAbsolutePath().toFile()
         }
 
         val uri = URI(vcs.url)
-        return Paths.get(gopath.path, "src", uri.host, uri.path).toFile().canonicalFile
+        return Paths.get(gopath.path, "src", uri.host, uri.path).toAbsolutePath().toFile()
     }
 
     private fun resolveProjectRoot(definitionFile: File): File {
@@ -157,17 +158,17 @@ class GoDep : PackageManager() {
     }
 
     private fun importLegacyManifest(definitionFile: File, projectDir: File, workingDir: File, gopath: File) {
-        val lockfileName = LEGACY_MANIFESTS[definitionFile.name]
+        val lockfileName = GO_LEGACY_MANIFESTS[definitionFile.name]
 
-        if (lockfileName != NO_LOCKFILE && !File(workingDir, lockfileName).isFile && !Main.allowDynamicVersions) {
+        if (lockfileName != null && !File(workingDir, lockfileName).isFile &&
+                !analyzerConfig.allowDynamicVersions) {
             throw IllegalArgumentException("No lockfile found in ${projectDir.invariantSeparatorsPath}, dependency " +
                     "versions are unstable.")
         }
 
         log.debug { "Running 'dep init' to import legacy manifest file ${definitionFile.name}" }
 
-        val env = mapOf("GOPATH" to gopath.absolutePath)
-        ProcessCapture(workingDir, env, "dep", "init").requireSuccess()
+        run("init", workingDir = workingDir, environment = mapOf("GOPATH" to gopath.absolutePath))
     }
 
     private fun setUpWorkspace(projectDir: File, vcs: VcsInfo, gopath: File): File {
@@ -190,15 +191,14 @@ class GoDep : PackageManager() {
     private fun parseProjects(workingDir: File, gopath: File): List<Map<String, String>> {
         val lockfile = File(workingDir, "Gopkg.lock")
         if (!lockfile.isFile) {
-            if (!Main.allowDynamicVersions) {
+            if (!analyzerConfig.allowDynamicVersions) {
                 throw IllegalArgumentException(
                         "No lockfile found in ${workingDir.invariantSeparatorsPath}, dependency versions are unstable.")
             }
 
             log.debug { "Running 'dep ensure' to generate missing lockfile in $workingDir" }
 
-            val env = mapOf("GOPATH" to gopath.absolutePath)
-            ProcessCapture(workingDir, env, "dep", "ensure").requireSuccess()
+            run("ensure", workingDir = workingDir, environment = mapOf("GOPATH" to gopath.absolutePath))
         }
 
         val entries = Toml().read(lockfile).toMap()["projects"]
@@ -207,7 +207,7 @@ class GoDep : PackageManager() {
             return listOf()
         }
 
-        val projects: MutableList<Map<String, String>> = mutableListOf()
+        val projects = mutableListOf<Map<String, String>>()
 
         for (entry in entries as List<*>) {
             val project = entry as? Map<*, *> ?: continue
@@ -226,16 +226,14 @@ class GoDep : PackageManager() {
         return projects
     }
 
-    private fun resolveVcsInfo(vcs: VcsInfo, gopath: File): VcsInfo {
-        val importPath = vcs.url
-        val env = mapOf("GOPATH" to gopath.absolutePath)
-        val pc = ProcessCapture(null, env, "go", "get", "-d", importPath)
+    private fun resolveVcsInfo(importPath: String, revision: String, gopath: File): VcsInfo {
+        val pc = ProcessCapture("go", "get", "-d", importPath, environment = mapOf("GOPATH" to gopath.absolutePath))
 
         // HACK Some failure modes from "go get" can be ignored:
         // 1. repositories that don't have .go files in the root directory
         // 2. all files in the root directory have certain "build constraints" (like "// +build ignore")
-        if (pc.isError()) {
-            val msg = pc.stderr()
+        if (pc.isError) {
+            val msg = pc.stderr
 
             val errorMessagesToIgnore = listOf(
                     "no Go files in",
@@ -251,6 +249,6 @@ class GoDep : PackageManager() {
         val repoRoot = Paths.get(gopath.path, "src", importPath).toFile()
 
         // We want the revision recorded in Gopkg.lock contained in "vcs", not the one "go get" fetched.
-        return processProjectVcs(repoRoot, vcs).copy(revision = vcs.revision)
+        return processProjectVcs(repoRoot).copy(revision = revision)
     }
 }

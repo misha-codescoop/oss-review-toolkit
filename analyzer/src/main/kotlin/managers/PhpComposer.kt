@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,10 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 
-import com.here.ort.analyzer.Main
+import com.here.ort.analyzer.AbstractPackageManagerFactory
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.model.OrtIssue
 import com.here.ort.model.HashAlgorithm
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
@@ -37,87 +37,77 @@ import com.here.ort.model.ProjectAnalyzerResult
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.Scope
 import com.here.ort.model.VcsInfo
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
 import com.here.ort.model.jsonMapper
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.OS
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.textValueOrEmpty
-import com.here.ort.utils.checkCommandVersion
-import com.here.ort.utils.collectMessages
+import com.here.ort.utils.collectMessagesAsString
 import com.here.ort.utils.log
-import com.here.ort.utils.safeDeleteRecursively
 import com.here.ort.utils.showStackTrace
+import com.here.ort.utils.stashDirectories
+import com.here.ort.utils.textValueOrEmpty
 
 import com.vdurmont.semver4j.Requirement
 
 import java.io.File
 import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.SortedSet
 
-const val COMPOSER_BINARY = "composer.phar"
-const val COMPOSER_GLOBAL_SCRIPT_FILE_NAME = "composer"
-const val COMPOSER_GLOBAL_SCRIPT_FILE_NAME_WINDOWS = "composer.bat"
-const val COMPOSER_LOCK_FILE_NAME = "composer.lock"
+const val COMPOSER_PHAR_BINARY = "composer.phar"
+const val COMPOSER_LOCK_FILE = "composer.lock"
 
-class PhpComposer : PackageManager() {
-    companion object : PackageManagerFactory<PhpComposer>(
-            "https://getcomposer.org/",
-            "PHP",
-            listOf("composer.json")
-    ) {
-        override fun create() = PhpComposer()
+/**
+ * The Composer package manager for PHP, see https://getcomposer.org/.
+ */
+class PhpComposer(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig), CommandLineTool {
+    class Factory : AbstractPackageManagerFactory<PhpComposer>() {
+        override val globsForDefinitionFiles = listOf("composer.json")
+
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                PhpComposer(analyzerConfig, repoConfig)
     }
 
-    override fun command(workingDir: File) =
-            if (File(workingDir, COMPOSER_BINARY).isFile) {
-                "php $COMPOSER_BINARY"
+    override fun command(workingDir: File?) =
+            if (workingDir?.resolve(COMPOSER_PHAR_BINARY)?.isFile == true) {
+                "php $COMPOSER_PHAR_BINARY"
             } else {
                 if (OS.isWindows) {
-                    COMPOSER_GLOBAL_SCRIPT_FILE_NAME_WINDOWS
+                    "composer.bat"
                 } else {
-                    COMPOSER_GLOBAL_SCRIPT_FILE_NAME
+                    "composer"
                 }
             }
 
-    override fun toString() = PhpComposer.toString()
+    override fun run(workingDir: File?, vararg args: String) =
+            ProcessCapture(workingDir, *command(workingDir).split(" ").toTypedArray(), *args).requireSuccess()
 
-    override fun prepareResolution(definitionFiles: List<File>): List<File> {
+    override fun getVersionRequirement(): Requirement = Requirement.buildIvy("[1.5,)")
+
+    override fun prepareResolution(definitionFiles: List<File>) {
         // If all of the directories we are analyzing contain a composer.phar, no global installation of Composer is
         // required and hence we skip the version check.
-        if (definitionFiles.all { File(it.parentFile, COMPOSER_BINARY).isFile }) {
-            return definitionFiles
+        if (definitionFiles.all { File(it.parentFile, COMPOSER_PHAR_BINARY).isFile }) {
+            return
         }
-
-        var workingDir = definitionFiles.first().parentFile
 
         // We do not actually depend on any features specific to a version of Composer, but we still want to stick to
         // fixed versions to be sure to get consistent results. The version string can be something like:
         // Composer version 1.5.1 2017-08-09 16:07:22
         // Composer version @package_branch_alias_version@ (1.0.0-beta2) 2016-03-27 16:00:34
-        checkCommandVersion(
-                command(workingDir),
-                Requirement.buildIvy("[1.5,)"),
-                ignoreActualVersion = Main.ignoreVersions,
+        checkVersion(
+                "--no-ansi --version",
+                ignoreActualVersion = analyzerConfig.ignoreToolVersions,
                 transform = { it.split(" ").dropLast(2).last().removeSurrounding("(", ")") }
         )
-
-        return definitionFiles
     }
 
     override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
         val workingDir = definitionFile.parentFile
-        val vendorDir = File(workingDir, "vendor")
-        var tempVendorDir: File? = null
 
-        try {
-            if (vendorDir.isDirectory) {
-                val tempDir = createTempDir(Main.TOOL_NAME, ".tmp", workingDir)
-                tempVendorDir = File(tempDir, "composer_vendor")
-                log.warn { "'$vendorDir' already exists, temporarily moving it to '$tempVendorDir'." }
-                Files.move(vendorDir.toPath(), tempVendorDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
-            }
-
+        stashDirectories(File(workingDir, "vendor")).use {
             val manifest = jsonMapper.readTree(definitionFile)
             val hasDependencies = manifest.fields().asSequence().any { (key, value) ->
                 key.startsWith("require") && value.count() > 0
@@ -126,12 +116,21 @@ class PhpComposer : PackageManager() {
             val (packages, scopes) = if (hasDependencies) {
                 installDependencies(workingDir)
 
-                log.info { "Reading $COMPOSER_LOCK_FILE_NAME file in ${workingDir.absolutePath}..." }
-                val lockFile = jsonMapper.readTree(File(workingDir, COMPOSER_LOCK_FILE_NAME))
+                log.info { "Reading $COMPOSER_LOCK_FILE file in ${workingDir.absolutePath}..." }
+                val lockFile = jsonMapper.readTree(File(workingDir, COMPOSER_LOCK_FILE))
                 val packages = parseInstalledPackages(lockFile)
+
+                // Let's also determine the "virtual" (replaced and provided) packages. These can be declared as 
+                // required, but are not listed in composer.lock as installed.  
+                // If we didn't handle them specifically, we would report them as missing when trying to load the 
+                // dependency information for them. We can't simply put these "virtual" packages in the normal package 
+                // map as this would cause us to report a package which is not actually installed with the contents of 
+                // the "replacing" package.
+                val virtualPackages = parseVirtualPackageNames(packages, manifest, lockFile)
+
                 val scopes = sortedSetOf(
-                        parseScope("require", true, manifest, lockFile, packages),
-                        parseScope("require-dev", false, manifest, lockFile, packages)
+                        parseScope("require", manifest, lockFile, packages, virtualPackages),
+                        parseScope("require-dev", manifest, lockFile, packages, virtualPackages)
                 )
 
                 Pair(packages, scopes)
@@ -143,49 +142,43 @@ class PhpComposer : PackageManager() {
 
             val project = parseProject(definitionFile, scopes)
 
-            return ProjectAnalyzerResult(Main.allowDynamicVersions, project,
-                    packages.values.map { it.toCuratedPackage() }.toSortedSet())
-        } finally {
-            // Delete vendor folder to not pollute the scan.
-            log.info { "Deleting temporary '$vendorDir'..." }
-            vendorDir.safeDeleteRecursively()
-
-            // Restore any previously existing "vendor" directory.
-            if (tempVendorDir != null) {
-                log.info { "Restoring original '$vendorDir' directory from '$tempVendorDir'." }
-                Files.move(tempVendorDir.toPath(), vendorDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
-                if (!tempVendorDir.parentFile.delete()) {
-                    throw IOException("Unable to delete the '${tempVendorDir.parent}' directory.")
-                }
-            }
+            return ProjectAnalyzerResult(project, packages.values.map { it.toCuratedPackage() }.toSortedSet())
         }
     }
 
-    private fun parseScope(scopeName: String, delivered: Boolean, manifest: JsonNode, lockFile: JsonNode,
-                           packages: Map<String, Package>): Scope {
+    private fun parseScope(scopeName: String, manifest: JsonNode, lockFile: JsonNode, packages: Map<String, Package>,
+                           virtualPackages: Set<String>): Scope {
         val requiredPackages = manifest[scopeName]?.fieldNames() ?: listOf<String>().iterator()
-        val dependencies = buildDependencyTree(requiredPackages, lockFile, packages)
-        return Scope(scopeName, delivered, dependencies)
+        val dependencies = buildDependencyTree(requiredPackages, lockFile, packages, virtualPackages)
+        return Scope(scopeName, dependencies)
     }
 
-    private fun buildDependencyTree(dependencies: Iterator<String>, lockFile: JsonNode,
-                                    packages: Map<String, Package>): SortedSet<PackageReference> {
+    private fun buildDependencyTree(dependencies: Iterator<String>, lockFile: JsonNode, packages: Map<String, Package>,
+                                    virtualPackages: Set<String>): SortedSet<PackageReference> {
         val packageReferences = mutableSetOf<PackageReference>()
 
         dependencies.forEach { packageName ->
             // Composer allows declaring the required PHP version including any extensions, such as "ext-curl". Language
             // implementations are not included in the results from other analyzer modules, so we want to skip them here
-            // as well.
-            if (packageName != "php" && !packageName.startsWith("ext-")) {
+            // as well. The special package "composer-plugin-api" is also excluded since it's only used to specify the
+            // supported composer plugin versions.
+            // Virtual packages are also ignored, since otherwise we would mark them as missing.
+            if (packageName != "php" && !packageName.startsWith("ext-") && packageName != "composer-plugin-api"
+                    && packageName !in virtualPackages) {
                 val packageInfo = packages[packageName]
                         ?: throw IOException("Could not find package info for $packageName")
                 try {
-                    val transitiveDependencies = getRuntimeDependencies(packageName, lockFile)
-                    packageReferences += packageInfo.toReference(
-                            buildDependencyTree(transitiveDependencies, lockFile, packages))
+                    val runtimeDependencies = getRuntimeDependencies(packageName, lockFile)
+                    val transitiveDependencies = buildDependencyTree(runtimeDependencies, lockFile, packages,
+                            virtualPackages)
+                    packageReferences += packageInfo.toReference(dependencies = transitiveDependencies)
                 } catch (e: Exception) {
                     e.showStackTrace()
-                    PackageReference(packageInfo.id, sortedSetOf<PackageReference>(), e.collectMessages())
+
+                    log.error { "Could not resolve dependencies of '$packageName': ${e.collectMessagesAsString()}" }
+
+                    packageInfo.toReference(errors = listOf(OrtIssue(source = toString(),
+                            message = e.collectMessagesAsString())))
                 }
             }
         }
@@ -196,18 +189,17 @@ class PhpComposer : PackageManager() {
         val json = jsonMapper.readTree(definitionFile)
         val homepageUrl = json["homepage"].textValueOrEmpty()
         val vcs = parseVcsInfo(json)
-        val rawName = json["name"].textValue()
+        val rawName = json["name"]?.textValue() ?: definitionFile.parentFile.name
 
         return Project(
                 id = Identifier(
-                        provider = toString(),
+                        type = toString(),
                         namespace = rawName.substringBefore("/"),
                         name = rawName.substringAfter("/"),
                         version = json["version"].textValueOrEmpty()
                 ),
+                definitionFilePath = VersionControlSystem.getPathInfo(definitionFile).path,
                 declaredLicenses = parseDeclaredLicenses(json),
-                definitionFilePath = VersionControlSystem.getPathToRoot(definitionFile) ?: "",
-                aliases = emptyList(),
                 vcs = vcs,
                 vcsProcessed = processProjectVcs(definitionFile.parentFile, vcs, homepageUrl),
                 homepageUrl = homepageUrl,
@@ -225,16 +217,15 @@ class PhpComposer : PackageManager() {
                 val homepageUrl = pkgInfo["homepage"].textValueOrEmpty()
                 val vcsFromPackage = parseVcsInfo(pkgInfo)
 
-                // I could not find documentation on the schema of composer.lock, but there is a schema for
-                // composer.json at https://getcomposer.org/schema.json and it does not include the "version" field in
-                // the list of required properties.
+                // Just warn if the version is missing as Composer itself declares it as optional, see
+                // https://getcomposer.org/doc/04-schema.md#version.
                 if (version.isEmpty()) {
                     log.warn { "No version information found for package $rawName." }
                 }
 
                 packages[rawName] = Package(
                         id = Identifier(
-                                provider = toString(),
+                                type = toString(),
                                 namespace = rawName.substringBefore("/"),
                                 name = rawName.substringAfter("/"),
                                 version = version
@@ -242,8 +233,8 @@ class PhpComposer : PackageManager() {
                         declaredLicenses = parseDeclaredLicenses(pkgInfo),
                         description = pkgInfo["description"].textValueOrEmpty(),
                         homepageUrl = homepageUrl,
-                        binaryArtifact = parseBinaryArtifact(pkgInfo),
-                        sourceArtifact = RemoteArtifact.EMPTY,
+                        binaryArtifact = RemoteArtifact.EMPTY,
+                        sourceArtifact = parseArtifact(pkgInfo),
                         vcs = vcsFromPackage,
                         vcsProcessed = processPackageVcs(vcsFromPackage, homepageUrl)
                 )
@@ -251,6 +242,38 @@ class PhpComposer : PackageManager() {
         }
         return packages
     }
+
+    /**
+     * Get all names of "virtual" (replaced or provided) packages in the package or lock file.
+     *
+     * While Composer also takes the versions of the virtual packages into account, we simply use priorities here. Since
+     * Composer can't handle the same package in multiple version, we can assume that as soon as a package is found in
+     * composer.lock we can ignore any virtual package with the same name. Since the code later depends on the virtual
+     * packages not accidentally containing a package which is actually installed, we make sure to only return virtual
+     * packages for which are not in the installed package map.
+     */
+    private fun parseVirtualPackageNames(packages: Map<String, Package>, manifest: JsonNode, lockFile: JsonNode)
+            : Set<String> {
+        val replacedNames = mutableSetOf<String>()
+
+        // The contents of the manifest file, which can also define replacements, is not included in the lock file, so 
+        // we parse the manifest file as well. 
+        replacedNames += parseVirtualNames(manifest)
+
+        listOf("packages", "packages-dev").forEach { type ->
+            lockFile[type]?.flatMap { pkgInfo ->
+                parseVirtualNames(pkgInfo)
+            }?.let {
+                replacedNames += it
+            }
+        }
+        return replacedNames - packages.keys
+    }
+
+    private fun parseVirtualNames(packageInfo: JsonNode) =
+            listOf("replace", "provide").flatMap {
+                packageInfo[it]?.fieldNames()?.asSequence()?.toSet() ?: emptySet()
+            }.toSet()
 
     private fun parseDeclaredLicenses(packageInfo: JsonNode) =
             packageInfo["license"]?.mapNotNull { it?.textValue() }?.toSortedSet() ?: sortedSetOf<String>()
@@ -261,13 +284,10 @@ class PhpComposer : PackageManager() {
         } ?: VcsInfo.EMPTY
     }
 
-    private fun parseBinaryArtifact(packageInfo: JsonNode): RemoteArtifact {
+    private fun parseArtifact(packageInfo: JsonNode): RemoteArtifact {
         return packageInfo["dist"]?.let {
-            val sha = it["shasum"].textValueOrEmpty()
-            // "shasum" is SHA-1: https://github.com/composer/composer/blob/ \
-            // 285ff274accb24f45ffb070c2b9cfc0722c31af4/src/Composer/Repository/ArtifactRepository.php#L149
-            val algo = if (sha.isEmpty()) HashAlgorithm.UNKNOWN else HashAlgorithm.SHA1
-            RemoteArtifact(it["url"].textValueOrEmpty(), sha, algo)
+            val shasum = it["shasum"].textValueOrEmpty()
+            RemoteArtifact(it["url"].textValueOrEmpty(), shasum, HashAlgorithm.fromHash(shasum))
         } ?: RemoteArtifact.EMPTY
     }
 
@@ -287,13 +307,12 @@ class PhpComposer : PackageManager() {
     }
 
     private fun installDependencies(workingDir: File) {
-        require(Main.allowDynamicVersions || File(workingDir, COMPOSER_LOCK_FILE_NAME).isFile) {
+        require(analyzerConfig.allowDynamicVersions || File(workingDir, COMPOSER_LOCK_FILE).isFile) {
             "No lock file found in $workingDir, dependency versions are unstable."
         }
 
         // The "install" command creates a "composer.lock" file (if not yet present) except for projects without any
         // dependencies, see https://getcomposer.org/doc/01-basic-usage.md#installing-without-composer-lock.
-        ProcessCapture(workingDir, *command(workingDir).split(" ").toTypedArray(), "install")
-                .requireSuccess()
+        run(workingDir, "install")
     }
 }

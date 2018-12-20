@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,23 +19,21 @@
 
 package com.here.ort.model
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
+
 import java.util.SortedSet
 
 /**
  * The scope class puts package dependencies into context.
  */
+@JsonIgnoreProperties("delivered", "distributed")
 data class Scope(
         /**
          * The respective package manager's native name for the scope, e.g. "compile", " provided" etc. for Maven, or
          * "dependencies", "devDependencies" etc. for NPM.
          */
         val name: String,
-
-        /**
-         * A flag to indicate whether this scope is delivered along with the product, i.e. distributed to external
-         * parties.
-         */
-        val delivered: Boolean,
 
         /**
          * The set of references to packages in this scope. Note that only the first-order packages in this set
@@ -45,27 +43,43 @@ data class Scope(
          * dependencies would not be test dependencies of the test dependencies, but compile dependencies of test
          * dependencies.
          */
-        val dependencies: SortedSet<PackageReference>
-) : CustomData(), Comparable<Scope> {
-    fun collectAllDependencies(): SortedSet<Identifier> = dependencies.map { it.id }.toSortedSet().also { result ->
-        dependencies.forEach { result += it.collectAllDependencies() }
-    }
+        val dependencies: SortedSet<PackageReference> = sortedSetOf(),
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) : Comparable<Scope> {
+    /**
+     * Return the set of [PackageReference]s in this [Scope], up to and including a depth of [maxDepth] where counting
+     * starts at 0 (for the [Scope] itself) and 1 are direct dependencies etc. A value below 0 means to not limit the
+     * depth. If [includeErroneous] is true, [PackageReference]s with errors (but not their dependencies without errors)
+     * are excluded, otherwise they are included.
+     */
+    fun collectDependencies(maxDepth: Int = -1, includeErroneous: Boolean = true) =
+            dependencies.fold(sortedSetOf<PackageReference>()) { refs, ref ->
+                refs.also {
+                    if (maxDepth != 0) {
+                        if (ref.errors.isEmpty() || includeErroneous) it += ref
+                        it += ref.collectDependencies(maxDepth - 1, includeErroneous)
+                    }
+                }
+            }
 
     /**
      * A comparison function to sort scopes by their name.
      */
-    override fun compareTo(other: Scope) = compareValuesBy(this, other, { it.name })
+    override fun compareTo(other: Scope) = compareValuesBy(this, other) { it.name }
 
     /**
-     * Returns whether the given package is contained as a (transitive) dependency in this scope.
+     * Return whether the package identified by [id] is contained as a (transitive) dependency in this scope.
      */
-    operator fun contains(pkg: Package) = contains(pkg.id)
+    operator fun contains(id: Identifier) = dependencies.any { it.id == id || it.dependsOn(id) }
 
     /**
-     * Returns whether the package identified by [pkgId] is contained as a (transitive) dependency in this scope.
+     * Return all references to [id] as a dependency in this scope.
      */
-    operator fun contains(pkgId: Identifier) = dependencies.find { pkgRef ->
-        // Strip the package manager part from the packageIdentifier because it is not part of the PackageReference.
-        pkgRef.id == pkgId || pkgRef.dependsOn(pkgId)
-    } != null
+    fun findReferences(id: Identifier) =
+            dependencies.filter { it.id == id } + dependencies.flatMap { it.findReferences(id) }
 }

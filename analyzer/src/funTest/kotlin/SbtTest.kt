@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ package com.here.ort.analyzer
 import com.here.ort.analyzer.managers.SBT
 import com.here.ort.downloader.vcs.Git
 import com.here.ort.model.yamlMapper
-import com.here.ort.utils.test.USER_DIR
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.patchExpectedResult
 
 import io.kotlintest.shouldBe
 import io.kotlintest.specs.StringSpec
@@ -30,31 +31,34 @@ import io.kotlintest.specs.StringSpec
 import java.io.File
 
 class SbtTest : StringSpec({
-    val sbt = SBT.create()
-
-    "Dependencies of the external 'directories' project should be detected correctly" {
+    "Dependencies of the single 'directories' project should be detected correctly" {
         val projectName = "directories"
-        val projectDir = File("src/funTest/assets/projects/external/$projectName")
-        val definitionFile = File(projectDir, "build.sbt")
+        val projectDir = File("src/funTest/assets/projects/external/$projectName").absoluteFile
+        val expectedOutputFile = projectDir.resolveSibling("$projectName-expected-output.yml")
+
+        // Clean any previously generated POM files / target directories.
+        Git().run(projectDir, "clean", "-fd")
+
+        val ortResult = Analyzer(DEFAULT_ANALYZER_CONFIGURATION).analyze(projectDir, listOf(SBT.Factory()))
+
+        val actualResult = yamlMapper.writeValueAsString(ortResult)
+        val expectedResult = patchExpectedResult(expectedOutputFile)
+
+        actualResult shouldBe expectedResult
+    }
+
+    "Dependencies of the 'sbt-multi-project-example' multi-project should be detected correctly" {
+        val projectName = "sbt-multi-project-example"
+        val projectDir = File("src/funTest/assets/projects/external/$projectName").absoluteFile
         val expectedOutputFile = File(projectDir.parentFile, "$projectName-expected-output.yml")
 
         // Clean any previously generated POM files / target directories.
-        Git.run(projectDir, "clean", "-fd")
+        Git().run(projectDir, "clean", "-fd")
 
-        // Even if we do not explicit depend on the definitionFile, explicitly check for it before calling
-        // resolveDependencies() to avoid potentially less readable errors from "sbt makePom". Similar for the
-        // expected output file.
-        definitionFile.isFile shouldBe true
-        expectedOutputFile.isFile shouldBe true
+        val ortResult = Analyzer(DEFAULT_ANALYZER_CONFIGURATION).analyze(projectDir, listOf(SBT.Factory()))
 
-        val resolutionResult = sbt.resolveDependencies(USER_DIR, listOf(definitionFile))
-
-        // Because of the mapping from SBT to POM files we cannot use definitionFile as the key, so just ensure
-        // there is exactly one entry to take.
-        resolutionResult.size shouldBe 1
-
-        val actualResult = yamlMapper.writeValueAsString(resolutionResult.values.first())
-        val expectedResult = expectedOutputFile.readText()
+        val actualResult = yamlMapper.writeValueAsString(ortResult)
+        val expectedResult = patchExpectedResult(expectedOutputFile)
 
         actualResult shouldBe expectedResult
     }

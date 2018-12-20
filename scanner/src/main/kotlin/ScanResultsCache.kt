@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,17 +21,57 @@ package com.here.ort.scanner
 
 import ch.frankel.slf4k.*
 
-import com.fasterxml.jackson.databind.JsonNode
-
 import com.here.ort.model.CacheStatistics
 import com.here.ort.model.Identifier
 import com.here.ort.model.Package
 import com.here.ort.model.ScanResult
 import com.here.ort.model.ScanResultContainer
 import com.here.ort.model.ScannerDetails
+import com.here.ort.model.config.ArtifactoryCacheConfiguration
 import com.here.ort.utils.log
 
 interface ScanResultsCache {
+    companion object : ScanResultsCache {
+        var cache = object : ScanResultsCache {
+            override fun read(id: Identifier) = ScanResultContainer(id, emptyList())
+            override fun read(pkg: Package, scannerDetails: ScannerDetails) = ScanResultContainer(pkg.id, emptyList())
+            override fun add(id: Identifier, scanResult: ScanResult) = false
+        }
+            private set
+
+        var stats = CacheStatistics()
+
+        fun configure(config: ArtifactoryCacheConfiguration) {
+            require(config.url.isNotBlank()) {
+                "URL for Artifactory cache is missing."
+            }
+
+            require(config.apiToken.isNotBlank()) {
+                "API token for Artifactory cache is missing."
+            }
+
+            cache = ArtifactoryCache(config.url, config.apiToken)
+            log.info { "Using Artifactory cache '${config.url}'." }
+        }
+
+        override fun read(id: Identifier) =
+                cache.read(id).also {
+                    ++stats.numReads
+                    if (it.results.isNotEmpty()) {
+                        ++stats.numHits
+                    }
+                }
+
+        override fun read(pkg: Package, scannerDetails: ScannerDetails) =
+                cache.read(pkg, scannerDetails).also {
+                    ++stats.numReads
+                    if (it.results.isNotEmpty()) {
+                        ++stats.numHits
+                    }
+                }
+
+        override fun add(id: Identifier, scanResult: ScanResult) = cache.add(id, scanResult)
+    }
 
     /**
      * Read all [ScanResult]s for this [id] from the cache.
@@ -65,53 +105,4 @@ interface ScanResultsCache {
      * @return If the [ScanResult] could be written to the cache.
      */
     fun add(id: Identifier, scanResult: ScanResult): Boolean
-
-    companion object : ScanResultsCache {
-        var cache = object : ScanResultsCache {
-            override fun read(id: Identifier) = ScanResultContainer(id, emptyList())
-            override fun read(pkg: Package, scannerDetails: ScannerDetails) = ScanResultContainer(pkg.id, emptyList())
-            override fun add(id: Identifier, scanResult: ScanResult) = false
-        }
-            private set
-
-        var stats = CacheStatistics()
-
-        fun configure(config: JsonNode?) {
-            // Return early if there is no cache configuration.
-            val cacheNode = config?.get(Main.TOOL_NAME)?.get("cache") ?: return
-
-            val type = cacheNode["type"]?.textValue() ?: throw IllegalArgumentException("Cache type is missing.")
-
-            when (type.toLowerCase()) {
-                "artifactory" -> {
-                    val apiToken = cacheNode["apiToken"]?.textValue()
-                            ?: throw IllegalArgumentException("API token for Artifactory cache is missing.")
-
-                    val url = cacheNode["url"]?.textValue()
-                            ?: throw IllegalArgumentException("URL for Artifactory cache is missing.")
-
-                    cache = ArtifactoryCache(url, apiToken)
-                    log.info { "Using Artifactory cache '$url'." }
-                }
-                else -> throw IllegalArgumentException("Cache type '$type' unknown.")
-            }
-        }
-
-        override fun read(id: Identifier) = cache.read(id).also {
-            ++stats.numReads
-            if (it.results.isNotEmpty()) {
-                ++stats.numHits
-            }
-        }
-
-        override fun read(pkg: Package, scannerDetails: ScannerDetails) =
-                cache.read(pkg, scannerDetails).also {
-                    ++stats.numReads
-                    if (it.results.isNotEmpty()) {
-                        ++stats.numHits
-                    }
-                }
-
-        override fun add(id: Identifier, scanResult: ScanResult) = cache.add(id, scanResult)
-    }
 }

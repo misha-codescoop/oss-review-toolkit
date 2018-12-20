@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,8 +59,14 @@ data class VcsInfo(
          * example, for Git only this subdirectory of the repository should be cloned, or for Git Repo it is
          * interpreted as the path to the manifest file.
          */
-        val path: String = ""
-) : CustomData() {
+        val path: String = "",
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) {
     companion object {
         /**
          * A constant for a [VcsInfo] where all properties are empty strings.
@@ -111,7 +117,7 @@ data class VcsInfo(
     }
 
     /**
-     * Returns this [VcsInfo] in normalized form. This transforms the [type] to a lower case string and applies
+     * Return this [VcsInfo] in normalized form. This transforms the [type] to a lower case string and applies
      * [normalizeVcsUrl] to the [url].
      */
     fun normalize() = copy(type = type.toLowerCase(), url = normalizeVcsUrl(url))

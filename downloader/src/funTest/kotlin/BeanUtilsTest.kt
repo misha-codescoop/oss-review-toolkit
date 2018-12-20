@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,11 +42,11 @@ class BeanUtilsTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
-        "BeanUtils SVN tag should be correctly downloaded".config(enabled = Subversion.isInPath()) {
+        "BeanUtils SVN tag should be correctly downloaded".config(enabled = Subversion().isInPath()) {
             val vcsFromCuration = VcsInfo(
                     type = "svn",
                     url = "http://svn.apache.org/repos/asf/commons/proper/beanutils",
@@ -55,7 +55,7 @@ class BeanUtilsTest : StringSpec() {
 
             val pkg = Package(
                     id = Identifier(
-                            provider = "Maven",
+                            type = "Maven",
                             namespace = "commons-beanutils",
                             name = "commons-beanutils-bean-collections",
                             version = "1.8.3"
@@ -68,7 +68,7 @@ class BeanUtilsTest : StringSpec() {
                     vcs = vcsFromCuration
             )
 
-            val downloadResult = Main.download(pkg, outputDir)
+            val downloadResult = Downloader().download(pkg, outputDir)
             downloadResult.sourceArtifact shouldBe null
             downloadResult.vcsInfo shouldNotBe null
             downloadResult.vcsInfo!!.type shouldBe "Subversion"

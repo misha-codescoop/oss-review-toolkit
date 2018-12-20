@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,17 +35,17 @@ class DiskCache(
         /**
          * The directory to store the cache data, must be exclusive to the cache.
          */
-        val directory: File,
+        directory: File,
 
         /**
-         * The maximum size of the disk cache.
+         * The maximum size of the disk cache in bytes.
          */
-        val maxSize: Long,
+        maxCacheSizeInBytes: Long,
 
         /**
          * Duration in seconds that cache entries are valid.
          */
-        val timeToLive: Int
+        private val maxCacheEntryAgeInSeconds: Int
 ) {
     companion object {
         const val INDEX_FULL_KEY = 0
@@ -74,7 +74,7 @@ class DiskCache(
         private val ILLEGAL_KEY_CHARS = Regex("[^a-z0-9_-]")
     }
 
-    private val diskLruCache = DiskLruCache.open(directory, 0, VALUE_COUNT, maxSize)
+    private val diskLruCache = DiskLruCache.open(directory, 0, VALUE_COUNT, maxCacheSizeInBytes)
 
     /**
      * Shorten the string to be usable as a key for [DiskLruCache] which has a maximum length of [MAX_KEY_LENGTH].
@@ -113,7 +113,7 @@ class DiskCache(
         try {
             diskLruCache[diskKey]?.use { entry ->
                 val time = entry.getString(INDEX_TIMESTAMP).toLong()
-                if (time + timeToLive >= timeInSeconds()) {
+                if (time + maxCacheEntryAgeInSeconds >= currentTimeInSeconds()) {
                     return entry.getString(INDEX_DATA)
                 }
             }
@@ -121,6 +121,8 @@ class DiskCache(
             // Remove the expired entry after the snapshot was closed.
             diskLruCache.remove(diskKey)
         } catch (e: IOException) {
+            e.showStackTrace()
+
             log.error { "Could not read cache entry for key '$diskKey': ${e.message}" }
         }
         return null
@@ -131,16 +133,18 @@ class DiskCache(
         try {
             diskLruCache.edit(diskKey).apply {
                 set(INDEX_FULL_KEY, key)
-                set(INDEX_TIMESTAMP, timeInSeconds().toString())
+                set(INDEX_TIMESTAMP, currentTimeInSeconds().toString())
                 set(INDEX_DATA, data)
                 commit()
             }
             return true
         } catch (e: IOException) {
+            e.showStackTrace()
+
             log.error { "Could not write to disk cache for key '$diskKey': ${e.message}" }
         }
         return false
     }
 
-    private fun timeInSeconds() = System.currentTimeMillis() / 1000L
+    private fun currentTimeInSeconds() = System.currentTimeMillis() / 1000L
 }

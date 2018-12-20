@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,14 +42,14 @@ class DirectoryTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
         "Creates directories for Gradle submodules" {
             val pkg = Package(
                     id = Identifier(
-                            provider = "provider",
+                            type = "type",
                             namespace = "namespace",
                             name = "name",
                             version = "version"
@@ -64,11 +64,11 @@ class DirectoryTest : StringSpec() {
 
             // No download source specified, we expect exception in this case.
             shouldThrow<DownloadException> {
-                Main.download(pkg, outputDir)
+                Downloader().download(pkg, outputDir)
             }
 
             outputDir.list().size shouldBe 1
-            outputDir.list().first() shouldBe pkg.id.provider.fileSystemEncode()
+            outputDir.list().first() shouldBe pkg.id.type.fileSystemEncode()
 
             val namespaceDir = File(outputDir, outputDir.list().first())
             namespaceDir.list().size shouldBe 1

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -157,8 +157,8 @@ class AbstractDependencyTreePlugin<T> implements Plugin<T> {
             List<String> errors = []
 
             if (!isCompatibleGradleVersion(project.gradle.gradleVersion)) {
-                return new DependencyTreeModelImpl(project.group ?: '', project.name, project.version ?: '', [], [],
-                        [("This project uses the unsupported Gradle version ${project.gradle.gradleVersion}. " +
+                return new DependencyTreeModelImpl(project.group.toString(), project.name, project.version.toString(),
+                        [], [], [("This project uses the unsupported Gradle version ${project.gradle.gradleVersion}. " +
                                 'At least Gradle 2.14 is required.').toString()])
             }
 
@@ -204,8 +204,9 @@ class AbstractDependencyTreePlugin<T> implements Plugin<T> {
                 }
             }
 
-            def version = project.version == 'unspecified' ? '' : project.version
-            return new DependencyTreeModelImpl(project.group ?: '', project.name, version ?: '', configurations,
+            def version = project.version.toString()
+            if (version == 'unspecified') version = ''
+            return new DependencyTreeModelImpl(project.group.toString(), project.name, version, configurations,
                     repositories, errors.unique())
         }
 
@@ -230,6 +231,7 @@ class AbstractDependencyTreePlugin<T> implements Plugin<T> {
                             .execute()
                             .resolvedComponents
 
+                    // Imitate Kotlin's "firstOrNull()".
                     def result = resolvedComponents?.find { true }?.getArtifacts(MavenPomArtifact)?.find { true }
 
                     String error = null
@@ -264,8 +266,8 @@ class AbstractDependencyTreePlugin<T> implements Plugin<T> {
                             error, pomFile, null)
                 } else if (id instanceof ProjectComponentIdentifier) {
                     def dependencyProject = project.rootProject.findProject(id.projectPath)
-                    return new DependencyImpl(dependencyProject.group ?: '', dependencyProject.name,
-                            dependencyProject.version ?: '', '', '', dependencies, null, '',
+                    return new DependencyImpl(dependencyProject.group.toString(), dependencyProject.name,
+                            dependencyProject.version.toString(), '', '', dependencies, null, '',
                             dependencyProject.projectDir.absolutePath)
                 } else {
                     return dependencyFromDisplayName(id.displayName, dependencies,

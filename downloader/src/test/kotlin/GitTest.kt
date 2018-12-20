@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import io.kotlintest.specs.StringSpec
 import java.io.File
 
 class GitTest : StringSpec() {
+    private val git = Git()
     private lateinit var zipContentDir: File
 
     override fun beforeSpec(description: Description, spec: Spec) {
@@ -44,31 +45,31 @@ class GitTest : StringSpec() {
     }
 
     override fun afterSpec(description: Description, spec: Spec) {
-        zipContentDir.safeDeleteRecursively()
+        zipContentDir.safeDeleteRecursively(force = true)
     }
 
     init {
         "Detected Git version is not empty" {
-            val version = Git.getVersion()
+            val version = git.getVersion()
             println("Git version $version detected.")
             version shouldNotBe ""
         }
 
         "Git detects non-working-trees" {
-            Git.getWorkingTree(getUserConfigDirectory()).isValid() shouldBe false
+            git.getWorkingTree(getUserConfigDirectory()).isValid() shouldBe false
         }
 
         "Git correctly detects URLs to remote repositories" {
             // Bitbucket forwards to ".git" URLs for Git repositories, so we can omit the suffix.
-            Git.isApplicableUrl("https://bitbucket.org/yevster/spdxtraxample") shouldBe true
+            git.isApplicableUrl("https://bitbucket.org/yevster/spdxtraxample") shouldBe true
 
-            Git.isApplicableUrl("https://bitbucket.org/paniq/masagin") shouldBe false
+            git.isApplicableUrl("https://bitbucket.org/paniq/masagin") shouldBe false
         }
 
         "Detected Git working tree information is correct" {
-            val workingTree = Git.getWorkingTree(zipContentDir)
+            val workingTree = git.getWorkingTree(zipContentDir)
 
-            workingTree.getType() shouldBe "Git"
+            workingTree.vcsType shouldBe "Git"
             workingTree.isValid() shouldBe true
             workingTree.getRemoteUrl() shouldBe "https://github.com/naiquevin/pipdeptree.git"
             workingTree.getRevision() shouldBe "6f70dd5508331b6cfcfe3c1b626d57d9836cfd7c"
@@ -80,12 +81,13 @@ class GitTest : StringSpec() {
             val expectedBranches = listOf(
                     "debug-test-failures",
                     "drop-py2.6",
+                    "fixing-test-setups",
                     "master",
                     "release-0.10.1",
                     "reverse-mode"
             )
 
-            val workingTree = Git.getWorkingTree(zipContentDir)
+            val workingTree = git.getWorkingTree(zipContentDir)
             workingTree.listRemoteBranches().joinToString("\n") shouldBe expectedBranches.joinToString("\n")
         }
 
@@ -96,6 +98,8 @@ class GitTest : StringSpec() {
                     "0.11.0",
                     "0.12.0",
                     "0.12.1",
+                    "0.13.0",
+                    "0.13.1",
                     "0.5.0",
                     "0.6.0",
                     "0.7.0",
@@ -103,7 +107,7 @@ class GitTest : StringSpec() {
                     "0.9.0"
             )
 
-            val workingTree = Git.getWorkingTree(zipContentDir)
+            val workingTree = git.getWorkingTree(zipContentDir)
             workingTree.listRemoteTags().joinToString("\n") shouldBe expectedTags.joinToString("\n")
         }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,29 +19,11 @@
 
 package com.here.ort.utils
 
-import com.fasterxml.jackson.databind.JsonNode
-
 import java.io.File
-import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
-import java.net.URLConnection
-
-import okhttp3.Cache
-import okhttp3.ConnectionSpec
-import okhttp3.MediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody
-import okhttp3.Response
-
-import java.net.MalformedURLException
-import java.net.URL
-import java.nio.file.FileVisitResult
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.SimpleFileVisitor
-import java.nio.file.attribute.BasicFileAttributes
+import java.security.Permission
+import java.util.Collections
 
 @Suppress("UnsafeCast")
 val log = org.slf4j.LoggerFactory.getLogger({}.javaClass) as ch.qos.logback.classic.Logger
@@ -72,40 +54,18 @@ const val PARAMETER_ORDER_LOGGING = 2
 const val PARAMETER_ORDER_HELP = 100
 
 /**
- * A helper class to manage OkHttp instances backed by distinct cache directories.
+ * Check whether the specified two or more collections have no elemets in common.
  */
-object OkHttpClientHelper {
-    private val clients = mutableMapOf<String, OkHttpClient>()
+fun disjoint(c1: Collection<*>, c2: Collection<*>, vararg cN: Collection<*>): Boolean {
+    val c = listOf(c1, c2, *cN)
 
-    /**
-     * Guess the media type based on the file component of a string.
-     */
-    fun guessMediaType(name: String): MediaType? {
-        val contentType = URLConnection.guessContentTypeFromName(name) ?: "application/octet-stream"
-        return MediaType.parse(contentType)
-    }
-
-    /**
-     * Create a request body for the specified file.
-     */
-    fun createRequestBody(source: File): RequestBody = RequestBody.create(guessMediaType(source.name), source)
-
-    /**
-     * Execute a request using the client for the specified cache directory.
-     */
-    fun execute(cachePath: String, request: Request): Response {
-        val client = clients.getOrPut(cachePath) {
-            val cacheDirectory = File(getUserConfigDirectory(), cachePath)
-            val cache = Cache(cacheDirectory, 10 * 1024 * 1024)
-            val specs = listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT)
-            OkHttpClient.Builder()
-                    .cache(cache)
-                    .connectionSpecs(specs)
-                    .build()
+    for (a in c.indices) {
+        for (b in a + 1 until c.size) {
+            if (!Collections.disjoint(c[a], c[b])) return false
         }
-
-        return client.newCall(request).execute()
     }
+
+    return true
 }
 
 /**
@@ -114,33 +74,57 @@ object OkHttpClientHelper {
 fun filterVersionNames(version: String, names: List<String>, project: String? = null): List<String> {
     if (version.isBlank() || names.isEmpty()) return emptyList()
 
-    val normalizedSeparator = '_'
-    val normalizedVersion = version.replace(Regex("([.-])"), normalizedSeparator.toString()).toLowerCase()
+    // If there are full matches, return them right away.
+    names.filter { it.equals(version, true) }.let { if (it.isNotEmpty()) return it }
+
+    // The list of supported version separators.
+    val versionSeparators = listOf('-', '_', '.')
+    val versionHasSeparator = versionSeparators.any { version.contains(it) }
+
+    // Create variants of the version string to recognize.
+    data class VersionVariant(val name: String, val separators: List<Char>)
+
+    val versionLower = version.toLowerCase()
+    val versionVariants = mutableListOf(VersionVariant(versionLower, versionSeparators))
+
+    val separatorRegex = Regex(versionSeparators.joinToString("", "[", "]"))
+    versionSeparators.forEach {
+        versionVariants += VersionVariant(versionLower.replace(separatorRegex, it.toString()), listOf(it))
+    }
 
     val filteredNames = names.filter {
-        val normalizedName = it.replace(Regex("([.-])"), normalizedSeparator.toString()).toLowerCase()
+        val name = it.toLowerCase()
 
-        when {
-            // Allow to ignore suffixes in names that are separated by something else than the current
-            // separator, e.g. for version "3.3.1" accept "3.3.1-npm-packages" but not "3.3.1.0".
-            normalizedName.startsWith(normalizedVersion) -> {
-                val tail = normalizedName.removePrefix(normalizedVersion)
-                tail.firstOrNull() != normalizedSeparator
+        versionVariants.any { versionVariant ->
+            when {
+                // Allow to ignore suffixes in names that are separated by something else than the current
+                // separator, e.g. for version "3.3.1" accept "3.3.1-npm-packages" but not "3.3.1.0".
+                name.startsWith(versionVariant.name) -> {
+                    val tail = name.removePrefix(versionVariant.name)
+                    tail.firstOrNull() !in versionVariant.separators
+                }
+
+                // Allow to ignore prefixes in names that are separated by something else than the current
+                // separator, e.g. for version "0.10" accept "docutils-0.10" but not "1.0.10".
+                name.endsWith(versionVariant.name) -> {
+                    val head = name.removeSuffix(versionVariant.name)
+                    val last = head.lastOrNull()
+                    val forelast = head.dropLast(1).lastOrNull()
+
+                    val currentSeparators = if (versionHasSeparator) versionVariant.separators else versionSeparators
+
+                    // Full match with the current version variant.
+                    last == null
+                            // The prefix does not end with the current separators or a digit.
+                            || (last !in currentSeparators && !last.isDigit())
+                            // The prefix ends with the current separators but the forelast character is not a digit.
+                            || (last in currentSeparators && (forelast == null || !forelast.isDigit()))
+                            // The prefix ends with 'v' and the forelast character is a separator.
+                            || (last == 'v' && (forelast == null || forelast in currentSeparators))
+                }
+
+                else -> false
             }
-
-            // Allow to ignore prefixes in names that are separated by something else than the current
-            // separator, e.g. for version "0.10" accept "docutils-0.10" but not "1.0.10".
-            normalizedName.endsWith(normalizedVersion) -> {
-                val head = normalizedName.removeSuffix(normalizedVersion)
-                val last = head.lastOrNull()
-                val forelast = head.dropLast(1).lastOrNull()
-                last == null
-                        || (last != normalizedSeparator && !last.isDigit())
-                        || (last == normalizedSeparator && (forelast == null || !forelast.isDigit()))
-                        || (last.toLowerCase() == 'v' && (forelast == null || forelast == normalizedSeparator))
-            }
-
-            else -> false
         }
     }
 
@@ -154,9 +138,16 @@ fun filterVersionNames(version: String, names: List<String>, project: String? = 
 }
 
 /**
- * Return the directory to store user-specific configuration in.
+ * Return the longest prefix that is common to all [files].
  */
-fun getUserConfigDirectory() = File(System.getProperty("user.home"), ".ort")
+fun getCommonFilePrefix(files: Collection<File>) =
+        files.map {
+            it.normalize().absolutePath
+        }.reduce { prefix, path ->
+            prefix.commonPrefixWith(path)
+        }.let {
+            File(it)
+        }
 
 /**
  * Return the full path to the given executable file if it is in the system's PATH environment, or null otherwise.
@@ -165,12 +156,15 @@ fun getPathFromEnvironment(executable: String): File? {
     val paths = System.getenv("PATH")?.splitToSequence(File.pathSeparatorChar) ?: emptySequence()
 
     val executables = if (OS.isWindows) {
+        // Get the list of executable file extensions without the leading dot each.
         val pathExt = System.getenv("PATHEXT")?.let {
-            it.split(File.pathSeparatorChar).map { it.toLowerCase().drop(1) }
+            it.split(File.pathSeparatorChar).map { ext -> ext.toLowerCase().removePrefix(".") }
         } ?: emptyList()
 
         if (executable.substringAfterLast(".").toLowerCase() !in pathExt) {
-            pathExt.map { "$executable.$it" }
+            // Specifying an executable's file extension is optional on Windows, so try all of them in order, but still
+            // also try the unmodified executable name as a fall-back.
+            pathExt.map { "$executable.$it" } + executable
         } else {
             listOf(executable)
         }
@@ -189,6 +183,11 @@ fun getPathFromEnvironment(executable: String): File? {
 
     return null
 }
+
+/**
+ * Return the directory to store user-specific configuration in.
+ */
+fun getUserConfigDirectory() = File(System.getProperty("user.home"), ".ort")
 
 /**
  * Normalize a VCS URL by converting it to a common pattern.
@@ -224,6 +223,11 @@ fun normalizeVcsUrl(vcsUrl: String): String {
         }
     }
 
+    // If we have no protocol by now and the host is Git-specific, assume https.
+    if (url.startsWith("github.com") || url.startsWith("gitlab.com")) {
+        url = "https://$url"
+    }
+
     // A hierarchical URI looks like
     //     [scheme:][//authority][path][?query][#fragment]
     // where a server-based "authority" has the syntax
@@ -243,7 +247,7 @@ fun normalizeVcsUrl(vcsUrl: String): String {
     // Handle host-specific normalizations.
     if (uri.host != null) {
         when {
-            uri.host.endsWith("github.com") -> {
+            uri.host.endsWith("github.com") || uri.host.endsWith("gitlab.com") -> {
                 // Ensure the path ends in ".git".
                 val path = uri.path.takeIf { Regex("\\.git(/|$)") in it } ?: "${uri.path}.git"
 
@@ -264,141 +268,55 @@ fun normalizeVcsUrl(vcsUrl: String): String {
 }
 
 /**
- * Recursively collect the exception messages of this [Exception] and all its causes.
+ * Temporarily set the specified system [properties] while executing [block]. Afterwards, previously set properties have
+ * their original values restored and previously unset properties are cleared.
  */
-fun Exception.collectMessages(): List<String> {
-    val messages = mutableListOf<String>()
-    var cause: Throwable? = this
-    while (cause != null) {
-        messages += "${cause.javaClass.simpleName}: ${cause.message}"
-        cause = cause.cause
+fun temporaryProperties(vararg properties: Pair<String, String>, block: () -> Unit) {
+    val originalProperties = mutableListOf<Pair<String, String?>>()
+
+    properties.forEach { (key, value) ->
+        originalProperties += key to System.getProperty(key)
+        System.setProperty(key, value)
     }
-    return messages
+
+    try {
+        block()
+    } finally {
+        originalProperties.forEach { (key, value) ->
+            value?.let { System.setProperty(key, it) } ?: System.clearProperty(key)
+        }
+    }
 }
 
 /**
- * Delete files recursively without following symbolic links (Unix) or junctions (Windows).
- *
- * @throws IOException if the directory could not be deleted.
+ * Trap a system exit call in [block]. This is useful e.g. when calling the Main class of a command line tool
+ * programmatically. Returns the exit code or null if no system exit call was trapped.
  */
-fun File.safeDeleteRecursively() {
-    if (!this.exists()) {
-        return
-    }
+fun trapSystemExitCall(block: () -> Unit): Int? {
+    // Define a custom security exception which we can catch in order to ignore it.
+    class ExitTrappedException : SecurityException()
 
-    // This call to walkFileTree() implicitly uses EnumSet.noneOf(FileVisitOption.class), i.e.
-    // FileVisitOption.FOLLOW_LINKS is not used, so symbolic links are not followed.
-    Files.walkFileTree(this.toPath(), object : SimpleFileVisitor<Path>() {
-        override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
-            if (OS.isWindows && attrs.isOther) {
-                // Unlink junctions to turn them into empty directories.
-                val fsutil = ProcessCapture("fsutil", "reparsepoint", "delete", dir.toString())
-                if (fsutil.isSuccess()) {
-                    return FileVisitResult.SKIP_SUBTREE
-                }
+    var exitCode: Int? = null
+    val originalSecurityManager = System.getSecurityManager()
+
+    System.setSecurityManager(object : SecurityManager() {
+        override fun checkPermission(perm: Permission) {
+            if (perm.name.startsWith("exitVM")) {
+                exitCode = perm.name.substringAfter('.').toIntOrNull()
+                throw ExitTrappedException()
             }
 
-            return FileVisitResult.CONTINUE
+            originalSecurityManager?.checkPermission(perm)
         }
-
-        override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-            try {
-                Files.delete(file)
-            } catch (e: java.nio.file.AccessDeniedException) {
-                if (file.toFile().setWritable(true)) {
-                    // Try again.
-                    Files.delete(file)
-                }
-            }
-
-            return FileVisitResult.CONTINUE
-        }
-
-        override fun postVisitDirectory(dir: Path, exc: IOException?) =
-                FileVisitResult.CONTINUE.also { Files.delete(dir) }
     })
 
-    if (this.exists()) {
-        throw IOException("Could not delete directory '${this.absolutePath}'.")
-    }
-}
-
-/**
- * Create all missing intermediate directories without failing if any already exists.
- *
- * @throws IOException if any missing directory could not be created.
- */
-fun File.safeMkdirs() {
-    // Do not blindly trust mkdirs() returning "false" as it can fail for edge-cases like
-    // File(File("/tmp/parent1/parent2"), "/").mkdirs() if parent1 does not exist, although the directory is
-    // successfully created.
-    if (this.isDirectory || this.mkdirs() || this.isDirectory) {
-        return
+    try {
+        block()
+    } catch (e: ExitTrappedException) {
+        // Ignore our own custom security exception.
+    } finally {
+        System.setSecurityManager(originalSecurityManager)
     }
 
-    throw IOException("Could not create directory '${this.absolutePath}'.")
-}
-
-/**
- * Search [this] directory upwards towards the root until a contained sub-directory called [searchDirName] is found and
- * return the parent of [searchDirName], or return null if no such directory is found.
- */
-fun File.searchUpwardsForSubdirectory(searchDirName: String): File? {
-    if (!this.isDirectory) return null
-
-    var currentDir: File? = this.absoluteFile
-
-    while (currentDir != null && !File(currentDir, searchDirName).isDirectory) {
-        currentDir = currentDir.parentFile
-    }
-
-    return currentDir
-}
-
-/**
- * Construct a "file:" URI in a safe way by never using a null authority for wider compatibility.
- */
-fun File.toSafeURI(): URI {
-    val fileUri = this.toURI()
-    return URI("file", "", fileUri.path, fileUri.query, fileUri.fragment)
-}
-
-/**
- * Convenience function for [JsonNode] that returns an empty string if [JsonNode.textValue] is called on a null object
- * or the text value is null.
- */
-fun JsonNode?.textValueOrEmpty(): String = this?.textValue()?.let { it } ?: ""
-
-/**
- * Return the string encoded for safe use as a file name. Also limit the length to 255 characters which is the maximum
- * length in most modern filesystems: https://en.wikipedia.org/wiki/Comparison_of_file_systems#Limits
- */
-fun String.fileSystemEncode() =
-        // URLEncoder does not encode "." and "*", so do that manually.
-        java.net.URLEncoder.encode(this, "UTF-8")
-                .replace("*", "%2A")
-                .replace(Regex("(^\\.|\\.$)"), "%2E")
-                .take(255)
-
-/**
- * Return the string encoded for safe use as a file name or "unknown", if the string is empty.
- */
-fun String.encodeOrUnknown() = fileSystemEncode().takeUnless { it.isBlank() } ?: "unknown"
-
-/**
- * True if the string is a valid URL, false otherwise.
- */
-fun String.isValidUrl() =
-        try {
-            URL(this).toURI()
-            true
-        } catch (e: MalformedURLException) {
-            false
-        }
-
-/**
- * Print the stack trace of the [Throwable] if [printStackTrace] is set to true.
- */
-fun Throwable.showStackTrace() {
-    if (printStackTrace) printStackTrace()
+    return exitCode
 }

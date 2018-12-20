@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,8 @@
  * License-Filename: LICENSE
  */
 
-package com.here.ort.util
+package com.here.ort.analyzer
 
-import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.managers.*
 
 import io.kotlintest.shouldBe
@@ -33,39 +32,52 @@ class PackageManagerTest : WordSpec({
 
     "findManagedFiles" should {
         "find all managed files" {
-            val result = PackageManager.findManagedFiles(projectDir)
+            val managedFiles = PackageManager.findManagedFiles(projectDir)
 
             // The test project contains at least one file per package manager, so the result should also contain an
             // entry for each package manager.
-            result.keys shouldBe PackageManager.ALL.toSet()
+            managedFiles.keys shouldBe PackageManager.ALL.toSet()
 
-            result[Bundler] shouldBe listOf(File(projectDir, "Gemfile"))
-            result[GoDep] shouldBe listOf(File(projectDir, "Gopkg.toml"))
-            result[Gradle] shouldBe listOf(File(projectDir, "build.gradle"))
-            result[Maven] shouldBe listOf(File(projectDir, "pom.xml"))
-            result[NPM] shouldBe listOf(File(projectDir, "package.json"))
-            result[PhpComposer] shouldBe listOf(File(projectDir, "composer.json"))
-            result[PIP] shouldBe listOf(File(projectDir, "setup.py"))
-            result[SBT] shouldBe listOf(File(projectDir, "build.sbt"))
-            result[Yarn] shouldBe listOf(File(projectDir, "yarn.lock"))
+            // The keys in expected and actual maps of definition files are different instances of package manager
+            // factories. So to compare values use the package manager names as keys instead.
+            val managedFilesByName = managedFiles.mapKeys { (manager, _) ->
+                manager.toString()
+            }
+
+            managedFilesByName["Bower"] shouldBe listOf(File(projectDir, "bower.json"))
+            managedFilesByName["Bundler"] shouldBe listOf(File(projectDir, "Gemfile"))
+            managedFilesByName["GoDep"] shouldBe listOf(File(projectDir, "Gopkg.toml"))
+            managedFilesByName["Gradle"] shouldBe listOf(File(projectDir, "build.gradle"))
+            managedFilesByName["Maven"] shouldBe listOf(File(projectDir, "pom.xml"))
+            managedFilesByName["NPM"] shouldBe listOf(File(projectDir, "package.json"))
+            managedFilesByName["PhpComposer"] shouldBe listOf(File(projectDir, "composer.json"))
+            managedFilesByName["PIP"] shouldBe listOf(File(projectDir, "setup.py"))
+            managedFilesByName["SBT"] shouldBe listOf(File(projectDir, "build.sbt"))
+            managedFilesByName["Stack"] shouldBe listOf(File(projectDir, "stack.yaml"))
+            managedFilesByName["Yarn"] shouldBe listOf(File(projectDir, "package.json"))
         }
 
         "find only files for active package managers" {
-            val result = PackageManager.findManagedFiles(projectDir, listOf(Gradle, SBT, PIP))
+            val managedFiles = PackageManager.findManagedFiles(projectDir,
+                    listOf(Gradle.Factory(), PIP.Factory(), SBT.Factory()))
 
-            result.size shouldBe 3
-            result[Gradle] shouldBe listOf(File(projectDir, "build.gradle"))
-            result[Maven] shouldBe null
-            result[SBT] shouldBe listOf(File(projectDir, "build.sbt"))
-            result[NPM] shouldBe null
-            result[PIP] shouldBe listOf(File(projectDir, "setup.py"))
-            result[PhpComposer] shouldBe null
+            managedFiles.size shouldBe 3
+
+            // The keys in expected and actual maps of definition files are different instances of package manager
+            // factories. So to compare values use the package manager names as keys instead.
+            val managedFilesByName = managedFiles.mapKeys { (manager, _) ->
+                manager.toString()
+            }
+
+            managedFilesByName["Gradle"] shouldBe listOf(File(projectDir, "build.gradle"))
+            managedFilesByName["PIP"] shouldBe listOf(File(projectDir, "setup.py"))
+            managedFilesByName["SBT"] shouldBe listOf(File(projectDir, "build.sbt"))
         }
 
         "find no files if no package managers are active" {
-            val result = PackageManager.findManagedFiles(projectDir, emptyList())
+            val managedFiles = PackageManager.findManagedFiles(projectDir, emptyList())
 
-            result.size shouldBe 0
+            managedFiles.size shouldBe 0
         }
 
         "fail if the provided file is not a directory" {

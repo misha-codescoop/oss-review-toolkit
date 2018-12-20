@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,10 @@ import com.here.ort.analyzer.managers.PIP
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.yamlMapper
 import com.here.ort.utils.normalizeVcsUrl
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.DEFAULT_REPOSITORY_CONFIGURATION
 import com.here.ort.utils.test.USER_DIR
+import com.here.ort.utils.test.patchExpectedResult
 
 import io.kotlintest.shouldBe
 import io.kotlintest.specs.StringSpec
@@ -36,7 +39,8 @@ class PipTest : StringSpec({
     "setup.py dependencies should be resolved correctly for spdx-tools-python" {
         val definitionFile = File(projectsDir, "external/spdx-tools-python/setup.py")
 
-        val result = PIP.create().resolveDependencies(USER_DIR, listOf(definitionFile))[definitionFile]
+        val result = PIP(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                .resolveDependencies(USER_DIR, listOf(definitionFile))[definitionFile]
         val expectedResult = File(projectsDir, "external/spdx-tools-python-expected-output.yml").readText()
 
         yamlMapper.writeValueAsString(result) shouldBe expectedResult
@@ -45,7 +49,8 @@ class PipTest : StringSpec({
     "requirements.txt dependencies should be resolved correctly for example-python-flask" {
         val definitionFile = File(projectsDir, "external/example-python-flask/requirements.txt")
 
-        val result = PIP.create().resolveDependencies(USER_DIR, listOf(definitionFile))[definitionFile]
+        val result = PIP(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                .resolveDependencies(USER_DIR, listOf(definitionFile))[definitionFile]
         val expectedResult = File(projectsDir, "external/example-python-flask-expected-output.yml").readText()
 
         yamlMapper.writeValueAsString(result) shouldBe expectedResult
@@ -58,13 +63,13 @@ class PipTest : StringSpec({
         val vcsRevision = vcsDir.getRevision()
         val vcsPath = vcsDir.getPathToRoot(definitionFile.parentFile)
 
-        val expectedResult = File(projectsDir, "synthetic/pip-expected-output.yml").readText()
-                // project.vcs_processed:
-                .replaceFirst("<REPLACE_URL>", normalizeVcsUrl(vcsUrl))
-                .replaceFirst("<REPLACE_REVISION>", vcsRevision)
-                .replaceFirst("<REPLACE_PATH>", vcsPath)
+        val expectedResult = patchExpectedResult(File(projectsDir, "synthetic/pip-expected-output.yml"),
+                url = normalizeVcsUrl(vcsUrl),
+                revision = vcsRevision,
+                path = vcsPath)
 
-        val result = PIP.create().resolveDependencies(USER_DIR, listOf(definitionFile))[definitionFile]
+        val result = PIP(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                .resolveDependencies(USER_DIR, listOf(definitionFile))[definitionFile]
 
         yamlMapper.writeValueAsString(result) shouldBe expectedResult
     }

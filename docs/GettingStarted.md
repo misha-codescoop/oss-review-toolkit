@@ -13,49 +13,42 @@ ORT:
 ORT is tested to run on Linux, macOS, and Windows. This tutorial assumes that you are running on Linux, but it should be
 easy to adapt the commands to macOS or Windows.
 
-To run ORT the following tools are required:
+In addition to Java (version >= 8), for some of the supported package managers and Version Control Systems additional
+tools need to be installed. In the context of this tutorial the following tools are required:
 
-* Java (version >= 8)
-* Git
+* Git (any recent version will do)
+* [Node.js](https://nodejs.org) 8.*
+* [NPM](https://www.npmjs.com) 5.5.* - 6.4.*
+* [Yarn](https://yarnpkg.com) 1.9.* - 1.12.*
 
-For some of the supported package managers and SCMs additional tools need to be installed:
-
-* CVS
-* [dep](https://github.com/golang/dep) 0.4.1
-* Go (tested with 1.10)
-* Mercurial
-* NPM 5.5.1 and Node.js 8.x (required for this tutorial because we scan `mime-types` which is an NPM project)
-* PHP Composer >= 1.5
-* SBT
-* Subversion
-* Yarn 1.3.2
+For the full list of supported package managers and Version Control Systems see the [README](../README.md).
 
 ## 2. Download & Install ORT
 
 In future we will provide binaries of the ORT tools, but currently you have to build the tools on your own. First
-download the source code from GitHub:
+download the source code (including Git submodules) from GitHub:
 
 ```bash
-git clone https://github.com/heremaps/oss-review-toolkit.git
+git clone --recurse-submodules https://github.com/heremaps/oss-review-toolkit.git
 ```
 
-To build the tools run:
+To build the command line interface run:
 
 ```bash
 cd oss-review-toolkit
 ./gradlew installDist
 ```
 
-This will create binaries of the tools in their builds folders, for example the analyzer binary can be found in
-`analyzer/build/install/analyzer/bin/analyzer`. To get the command line help for tool run it with the `--help` option:
+This will create the script to run ORT at `cli/build/install/ort/bin/ort`. To get the general command line help run it
+with the `--help` option:
 
 ```bash
-analyzer/build/install/analyzer/bin/analyzer --help
+cli/build/install/ort/bin/ort --help
 ```
 
 ## 3. Download the `mime-types` source code
 
-Before scanning `mime-types` its source code has to be downloaded. For reliable results we use version 2.1.18 (replace
+Before scanning `mime-types` its source code has to be downloaded. For reliable results we use version 2.1.19 (replace
 `[mime-types-path]` with the path you want to clone `mime-types` to):
 
 ```bash
@@ -70,32 +63,43 @@ The next step is to run the `analyzer`. It will create a JSON or YAML output fil
 `mime-types` including the meta-data of `mime-types` and its dependencies.
 
 ```bash
-# The easiest way to run the analyzer. Be aware that the [output-path] directory must not exist.
-analyzer/build/install/analyzer/bin/analyzer -i [mime-types-path] -o [output-path]
+# Command line help specific to the analyzer.
+cli/build/install/ort/bin/ort analyze --help
+
+# The easiest way to run the analyzer. Be aware that the [analyzer-output-path] directory must not exist.
+cli/build/install/ort/bin/ort analyze -i [mime-types-path] -o [analyzer-output-path]
 
 # The command above will create the default YAML output. If you prefer JSON run:
-analyzer/build/install/analyzer/bin/analyzer -i [mime-types-path] -o [output-path] -f JSON
+cli/build/install/ort/bin/ort analyze -i [mime-types-path] -o [analyzer-output-path] -f JSON
 
 # To get the maximum log output run:
-analyzer/build/install/analyzer/bin/analyzer -i [mime-types-path] -o [output-path] --debug --stacktrace
+cli/build/install/ort/bin/ort --debug --stacktrace analyze -i [mime-types-path] -o [analyzer-output-path]
 ```
 
 The `analyzer` will search for build files of all supported package managers. In case of `mime-types` it will find the
-`package.json` file and write the results of the dependency analysis to the output file `all-dependencies.yml`:
+`package.json` file and write the results of the dependency analysis to the output file `analyzer-result.yml`. On the
+first attempt of running the analyzer on the `mime-types` package it will fail with an error message:
 
 ```bash
-$ analyzer/build/install/analyzer/bin/analyzer -i ~/git/mime-types -o ~/analyzer-results/mime-types
 The following package managers are activated:
-        Gradle, Maven, SBT, NPM, GoDep, PIP, Bundler, PhpComposer
+        Gradle, Maven, SBT, NPM, Yarn, GoDep, PIP, Bundler, PhpComposer, Stack
 Scanning project path:
         [mime-types-path]
-NPM projects found in:
-        package.json
-Resolving NPM dependencies for '[mime-types-path]/package.json'...
-Writing analyzer result
-to
-        [output-path]/mime-types/all-dependencies.yml
-done.
+ERROR - Resolving dependencies for 'package.json' failed with: No lockfile found in '[mime-types-path]'. This potentially results in unstable versions of dependencies. To allow this, enable support for dynamic versions.
+Writing analyzer result to '[analyzer-output-path]/analyzer-result.yml'.
+```
+
+This happens because `mime-types` does not have `package-lock.json` file. Without this file the versions of (transitive)
+dependencies that are defined with version ranges could change at any time, leading to different results of the
+analyzer. To override this check use the `--allow-dynamic-versions` option:
+
+```bash
+$ cli/build/install/ort/bin/ort analyze -i [mime-types-path] -o [analyzer-output-path] --allow-dynamic-versions
+The following package managers are activated:
+        Gradle, Maven, SBT, NPM, Yarn, GoDep, PIP, Bundler, PhpComposer, Stack
+Scanning project path:
+        [mime-types-path]
+Writing analyzer result to '[analyzer-output-path]/analyzer-result.yml'.
 ```
 
 The result file will contain information about the `mime-types` package itself, the dependency tree for each scope, and
@@ -105,108 +109,100 @@ information about each dependency. The scope names come from the package manager
 The structure of the results file is:
 
 ```yaml
-allowDynamicVersions: false
-# VCS information for the input directory.
-vcs:
-  type: "Git"
-  url: "https://github.com/jshttp/mime-types.git"
-  revision: "076f7902e3a730970ea96cd0b9c09bb6110f1127"
-  path: ""
-vcs_processed:
-  type: "git"
-  url: "https://github.com/jshttp/mime-types.git"
-  revision: "076f7902e3a730970ea96cd0b9c09bb6110f1127"
-  path: ""
-# Metadata about the mime-types package.
-projects:
-- id: "NPM::mime-types:2.1.18"
-  definition_file_path: "package.json"
-  declared_licenses:
-  - "MIT"
-  aliases: []
+# VCS information about the input directory.
+repository:
   vcs:
-    type: ""
+    type: "Git"
     url: "https://github.com/jshttp/mime-types.git"
-    revision: ""
+    revision: "7c4ce23d7354fbf64c69d7b7be8413c4ba2add78"
     path: ""
   vcs_processed:
     type: "git"
     url: "https://github.com/jshttp/mime-types.git"
-    revision: "076f7902e3a730970ea96cd0b9c09bb6110f1127"
+    revision: "7c4ce23d7354fbf64c69d7b7be8413c4ba2add78"
     path: ""
-  homepage_url: ""
-  # The dependency trees by scope.
-  scopes:
-  - name: "dependencies"
-    delivered: true
-    dependencies:
-    - id: "NPM::mime-db:1.33.0"
-      dependencies: []
-      errors: []
-  - name: "devDependencies"
-    delivered: false
-    dependencies:
-    - id: "NPM::eslint-config-standard:10.2.1"
-      dependencies: []
-      errors: []
-    - id: "NPM::eslint-plugin-import:2.8.0"
-      dependencies:
-      - id: "NPM::builtin-modules:1.1.1"
-        dependencies: []
-        errors: [] # If an error occured during the dependency analysis of this package it would be in this array.
+  config: {}
+# The analyzer result.
+analyzer:
+  # Information about the environment the analyzer was run in.
+  environment:
+    os: "Linux"
+    tool_versions: {}
+  # Configuration options of the analyzer.
+  config:
+    ignore_tool_versions: false
+    allow_dynamic_versions: true
+    remove_excludes_from_result: false
+  # The result of the dependency analysis.
+  result:
+    # Metadata about all found projects, in this case only the mime-types package defined by the package.json file.
+    projects:
+    - id: "NPM::mime-types:2.1.19"
+      definition_file_path: "package.json"
+      declared_licenses:
+      - "MIT"
+      vcs:
+        type: ""
+        url: "https://github.com/jshttp/mime-types.git"
+        revision: ""
+        path: ""
+      vcs_processed:
+        type: "git"
+        url: "https://github.com/jshttp/mime-types.git"
+        revision: "7c4ce23d7354fbf64c69d7b7be8413c4ba2add78"
+        path: ""
+      homepage_url: ""
+      # The dependency tress by scope.
+      scopes:
+      - name: "dependencies"
+        dependencies:
+        - id: "NPM::mime-db:1.35.0"
+          dependencies: []
+          errors: []
+      - name: "devDependencies"
+        dependencies:
+        - id: "NPM::eslint-config-standard:11.0.0"
+          dependencies: []
+          errors: []
+        - id: "NPM::eslint-plugin-import:2.13.0"
+          dependencies:
+          - id: "NPM::contains-path:0.1.0"
+            dependencies: []
+            errors: [] # If an error occured during the dependency analysis of this package it would be in this array.
 # ...
 # Detailed metadata about each package from the dependency trees.
-packages:
-- package:
-    id: "NPM::abbrev:1.0.9"
-    declared_licenses:
-    - "ISC"
-    description: "Like ruby's abbrev module, but in js"
-    homepage_url: "https://github.com/isaacs/abbrev-js#readme"
-    binary_artifact:
-      url: "https://registry.npmjs.org/abbrev/-/abbrev-1.0.9.tgz"
-      hash: "91b4792588a7738c25f35dd6f63752a2f8776135"
-      hash_algorithm: "SHA-1"
-    source_artifact:
-      url: ""
-      hash: ""
-      hash_algorithm: ""
-    vcs:
-      type: "git"
-      url: "git+ssh://git@github.com/isaacs/abbrev-js.git"
-      revision: "c386cd9dbb1d8d7581718c54d4ba944cc9298d6f"
-      path: ""
-    vcs_processed:
-      type: "git"
-      url: "ssh://git@github.com/isaacs/abbrev-js.git"
-      revision: "c386cd9dbb1d8d7581718c54d4ba944cc9298d6f"
-      path: ""
-  curations: []
+    packages:
+    - package:
+        id: "NPM::abbrev:1.0.9"
+        declared_licenses:
+        - "ISC"
+        description: "Like ruby's abbrev module, but in js"
+        homepage_url: "https://github.com/isaacs/abbrev-js#readme"
+        binary_artifact:
+          url: ""
+          hash: ""
+          hash_algorithm: ""
+        source_artifact:
+          url: "https://registry.npmjs.org/abbrev/-/abbrev-1.0.9.tgz"
+          hash: "91b4792588a7738c25f35dd6f63752a2f8776135"
+          hash_algorithm: "SHA-1"
+        vcs:
+          type: "git"
+          url: "git+ssh://git@github.com/isaacs/abbrev-js.git"
+          revision: "c386cd9dbb1d8d7581718c54d4ba944cc9298d6f"
+          path: ""
+        vcs_processed:
+          type: "git"
+          url: "ssh://git@github.com/isaacs/abbrev-js.git"
+          revision: "c386cd9dbb1d8d7581718c54d4ba944cc9298d6f"
+          path: ""
+      curations: []
 # ...
-#  Finally a list of errors that happened during dependency analysis. Fortunately empty in this case.
-errors: []
+# Finally a list of project related errors that happened during dependency analysis. Fortunately empty in this case.
+    errors: {}
+# A field to quickly check if the analyzer result contains any errors.
+    has_errors: false
 ```
-
-If you try the commands above with a different NPM package that does not have a
-[package-lock.json](https://docs.npmjs.com/files/package-locks) (or `npm-shrinkwrap.json` or `yarn.lock`) the analyzer
-will terminate with an error message like this:
-
-```
-ERROR - Analysis for these projects did not complete successfully:
-[npm-project-path]/package.json
-```
-
-This means that there have been issues with the dependency resolution of these packages. The reasons for these errors
-can be found in the log output of the `analyzer` or in the results file:
-
-```
-Resolving NPM dependencies for '[npm-project-path]/package.json'...
-17:11:16.683 ERROR - Resolving dependencies for 'package.json' failed with: No lockfile found in [npm-project-path], dependency versions are unstable.
-```
-
-This happens because without a [lockfile](https://docs.npmjs.com/files/package-locks) the versions of transitive
-dependencies could change at any time. Therefore ORT checks for the presence of a lockfile to generate reliable results.
-This check can be disabled with the `--allow-dynamic-versions` option.
 
 ## 5. Run the scanner
 
@@ -225,50 +221,45 @@ bootstrapped by the `scanner`.
 As for the `analyzer` you can get the command line options for the `scanner` using the `--help` option:
 
 ```bash
-scanner/build/install/scanner/bin/scanner --help
+cli/build/install/ort/bin/ort scan --help
 ```
 
 The `mime-types` package has only one dependency in the `depenencies` scope, but a lot of dependencies in the
 `devDependencies` scope. Scanning all of the `devDependencies` would take a lot of time, so we will only run the
 scanner on the `dependencies` scope in this tutorial. If you also want to scan the `devDependencies` it is strongly
-advised to configure a cache for the scan results as documented above to speed up repeated scans.
+advised to configure a cache for the scan results as documented in the [README](../README.md) to speed up repeated scans.
 
 ```bash
-$ scanner/build/install/scanner/bin/scanner -d [analyzer-output-path]/all-dependencies.yml -o [scanner-output-path] --scopes dependencies
+$ cli/build/install/ort/bin/ort scan --ort-file [analyzer-output-path]/analyzer-result.yml -o [scanner-output-path] --scopes dependencies
 Using scanner 'ScanCode'.
 Limiting scan to scopes: [dependencies]
-Bootstrapping scanner 'ScanCode' as version 2.9.2 was not found in PATH.
-Using processed VcsInfo(type=git, url=https://github.com/jshttp/mime-db.git, revision=e7c849b1c70ff745a4ae456a0cd5e6be8b05c2fb, resolvedRevision=null, path=).
-Original was VcsInfo(type=git, url=git+https://github.com/jshttp/mime-db.git, revision=e7c849b1c70ff745a4ae456a0cd5e6be8b05c2fb, resolvedRevision=null, path=).
-Running ScanCode version 2.9.2 on directory '[scanner-output-path]/mime-types/downloads/NPM/unknown/mime-db/1.33.0'.
-Using processed VcsInfo(type=git, url=https://github.com/jshttp/mime-types.git, revision=076f7902e3a730970ea96cd0b9c09bb6110f1127, resolvedRevision=null, path=).
+Bootstrapping scanner 'ScanCode' as required version 2.9.2 was not found in PATH.
+Using processed VcsInfo(type=git, url=https://github.com/jshttp/mime-db.git, revision=482cd6a25bbd6177de04a686d0e2a0c2465bf445, resolvedRevision=null, path=).
+Original was VcsInfo(type=git, url=git+https://github.com/jshttp/mime-db.git, revision=482cd6a25bbd6177de04a686d0e2a0c2465bf445, resolvedRevision=null, path=).
+Running ScanCode version 2.9.2 on directory '[scanner-output-path]/downloads/NPM/unknown/mime-db/1.35.0'.
+Using processed VcsInfo(type=git, url=https://github.com/jshttp/mime-types.git, revision=7c4ce23d7354fbf64c69d7b7be8413c4ba2add78, resolvedRevision=null, path=).
 Original was VcsInfo(type=, url=https://github.com/jshttp/mime-types.git, revision=, resolvedRevision=null, path=).
-Running ScanCode version 2.9.2 on directory '[scanner-output-path]/mime-types/downloads/NPM/unknown/mime-types/2.1.18'.
-Declared licenses for 'NPM::mime-db:1.33.0': MIT
-Detected licenses for 'NPM::mime-db:1.33.0': MIT
-Declared licenses for 'NPM::mime-types:2.1.18': MIT
-Detected licenses for 'NPM::mime-types:2.1.18': MIT
-Writing scan record to [scanner-output-path]/mime-types/scan-record.yml.
+Running ScanCode version 2.9.2 on directory '[scanner-output-path]/downloads/NPM/unknown/mime-types/2.1.19'.
+Writing scan result to '[scanner-output-path]/scan-result.yml'.
 ```
 
-As you can see from the output the licenses detected by `ScanCode` match the licenses declared by the packages. This is
-because we scanned a small and well-maintained package in this example, but if you run the scan on a bigger project you
-will see that `ScanCode` often finds more licenses than are declared by the packages.
+As you can see from when you check the results file the licenses detected by `ScanCode` match the licenses declared by
+the packages. This is because we scanned a small and well-maintained package in this example, but if you run the scan on
+a bigger project you will see that `ScanCode` often finds more licenses than are declared by the packages.
 
-The `scanner` writes the raw scanner output for each scanned package to a file in the
-`[scanner-output-path]/scanResults` directory. Additionally it creates a `[scanner-output-path]/scan-record.yml` file
-which contains a summary of all licenses for all packages and some more details like cache statistics and information
-about the scanned scopes.
+The `scanner` writes a new ORT result file to `[scanner-output-path]/scan-result.yml` containing the scan results in
+addition to the analyzer result from the input. This way belonging results are stored in the same place for traceability.
+If the input file already contained scan results they are replaced by the new scan results in the output.
 
 ## 6. Generate a report
 
-The `scan-record.yml` file can now be used as input for the reporter to generate human-readable reports. For example to
-generate both, the static HTML report and the Excel record, use:
+The `scan-result.yml` file can now be used as input for the reporter to generate human-readable reports. For example, to
+generate both a static HTML report and an Excel report use:
 
 ```bash
-reporter/build/install/reporter/bin/reporter  -f STATIC_HTML,EXCEL -s [scanner-output-path]/mime-types/scan-record.yml -o [reporter-output-path]/mime-types
-Writing static HTML report to '[reporter-output-path]/mime-types/scan-report.html'.
-Writing Excel report to '[reporter-output-path]/mime-types/scan-report.xlsx'.
+cli/build/install/ort/bin/ort report -f StaticHtml,Excel -i [scanner-output-path]/scan-result.yml -o [reporter-output-path]
+Writing static HTML report to '[reporter-output-path]/scan-report.html'.
+Writing Excel report to '[reporter-output-path]/scan-report.xlsx'.
 ```
 
 ## 7. Curating the metadata
@@ -276,60 +267,5 @@ Writing Excel report to '[reporter-output-path]/mime-types/scan-report.xlsx'.
 In the example above everything went well because the VCS information provided by the packages was correct, but this is
 not always the case. Often the metadata of packages has no VCS information, points to outdated repositories, or the
 repositories are not correctly tagged. Because this information can not always be fixed in remote packages ORT provides
-a mechanism to curate metadata of packages.
-
-These curations can be configured in a YAML file that has to be passed to the `analyzer`. The data from the curations
-file will overwrite the metadata provided by the packages themselves. This way it is possible to fix borken VCS URLs or
-provide the location of source artifacts. The structure of the curations file is:
-
-```yaml
-# Example for a complete curation object:
-#- id: "Maven:org.hamcrest:hamcrest-core:1.3"
-#  curations:
-#    declared_licenses:
-#    - "license a"
-#    - "license b"
-#    description: "curated description"
-#    homepage_url: "http://example.com"
-#    binary_artifact:
-#      url: "http://example.com/binary.zip"
-#      hash: "ddce269a1e3d054cae349621c198dd52"
-#      hash_algorithm: "MD5"
-#    source_artifact:
-#      url: "http://example.com/sources.zip"
-#      hash: "ddce269a1e3d054cae349621c198dd52"
-#      hash_algorithm: "MD5"
-#    vcs:
-#      type: "git"
-#      url: "http://example.com/repo.git"
-#      revision: "1234abc"
-#      path: "subdirectory"
-
-# A few examples:
-
-# Repository moved to https://gitlab.ow2.org.
-- id: "Maven:asm:asm" # No version means the curation will be applied to all versions of the package.
-  curations:
-    vcs:
-      type: "git"
-      url: "https://gitlab.ow2.org/asm/asm.git"
-
-# Revisions found by comparing NPM packages with the sources from https://github.com/olov/ast-traverse.
-- id: "NPM::ast-traverse:0.1.0"
-  curations:
-    vcs:
-      revision: "f864d24ba07cde4b79f16999b1c99bfb240a441e"
-- id: "NPM::ast-traverse:0.1.1"
-  curations:
-    vcs:
-      revision: "73f2b3c319af82fd8e490d40dd89a15951069b0d"
-```
-
-To use the curations file pass it to the `--package-curations-file` option of the `analyzer`:
-
-```
-analyzer/build/install/analyzer/bin/analyzer -i [input-path] -o [output-path] --package-curations-file [curations-file-path]
-```
-
-In future we will integrate [ClearlyDefined](https://clearlydefined.io/) as a source for curated metadata. Until then,
-and also for curations for internal packages that cannot be published, the curations file can be used.
+a mechanism to curate metadata of packages. For details, see
+[Configuration.md](./Configuration.md#curating-metadata-of-packages).

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,15 +25,16 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonRootName
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty
+import com.fasterxml.jackson.module.kotlin.readValue
 
 import com.here.ort.downloader.DownloadException
 import com.here.ort.downloader.VersionControlSystem
+import com.here.ort.downloader.WorkingTree
 import com.here.ort.model.Package
 import com.here.ort.model.xmlMapper
+import com.here.ort.utils.CommandLineTool
 import com.here.ort.utils.ProcessCapture
-import com.here.ort.utils.getCommandVersion
 import com.here.ort.utils.log
-import com.here.ort.utils.showStackTrace
 
 import java.io.File
 import java.io.IOException
@@ -89,27 +90,27 @@ data class SubversionPathEntry(
         val commit: SubversionInfoCommit,
         val lock: SubversionInfoLock?)
 
-object Subversion : VersionControlSystem() {
+class Subversion : VersionControlSystem(), CommandLineTool {
+    private val versionRegex = Pattern.compile("svn, [Vv]ersion (?<version>[\\d.]+) \\(r\\d+\\)")
+
     override val aliases = listOf("subversion", "svn")
-    override val commandName = "svn"
     override val latestRevisionNames = listOf("HEAD")
 
-    override fun getVersion(): String {
-        val versionRegex = Pattern.compile("svn, [Vv]ersion (?<version>[\\d.]+) \\(r\\d+\\)")
+    override fun command(workingDir: File?) = "svn"
 
-        return getCommandVersion("svn") {
-            versionRegex.matcher(it.lineSequence().first()).let {
-                if (it.matches()) {
-                    it.group("version")
-                } else {
-                    ""
+    override fun getVersion() =
+            getVersion { output ->
+                versionRegex.matcher(output.lineSequence().first()).let {
+                    if (it.matches()) {
+                        it.group("version")
+                    } else {
+                        ""
+                    }
                 }
             }
-        }
-    }
 
     override fun getWorkingTree(vcsDirectory: File) =
-            object : WorkingTree(vcsDirectory) {
+            object : WorkingTree(vcsDirectory, type) {
                 private val directoryNamespaces = listOf("branches", "tags", "trunk", "wiki")
                 private val svnInfoReader = xmlMapper.readerFor(SubversionInfoEntry::class.java)
                         .with(DeserializationFeature.UNWRAP_ROOT_VALUE)
@@ -140,13 +141,19 @@ object Subversion : VersionControlSystem() {
                         remoteUrl
                     }
 
-                    val svnPathInfo = run(workingDir, "info", "--xml", "--depth=immediates", "$projectRoot/$namespace")
-                    val valueType = xmlMapper.typeFactory
-                            .constructCollectionType(List::class.java, SubversionPathEntry::class.java)
-                    val pathEntries: List<SubversionPathEntry> = xmlMapper.readValue(svnPathInfo.stdout(), valueType)
+                    return try {
+                        val svnPathInfo = run(workingDir, "info", "--xml", "--depth=immediates",
+                                "$projectRoot/$namespace")
+                        val pathEntries = xmlMapper.readValue<List<SubversionPathEntry>>(svnPathInfo.stdout)
 
-                    // As the "immediates" depth includes the parent namespace itself, too, drop it.
-                    return pathEntries.drop(1).map { it.path }.sorted()
+                        // As the "immediates" depth includes the parent namespace itself, too, drop it.
+                        pathEntries.drop(1).map { it.path }.sorted()
+                    } catch (e: IOException) {
+                        // We assume a single project directory layout above. If we fail, e.g. for a multi-project
+                        // layout whose directory names cannot be easily guessed from the project names, return an
+                        // empty list to give a later curation the chance to succeed.
+                        emptyList()
+                    }
                 }
 
                 override fun listRemoteBranches() = listRemoteRefs("branches")
@@ -155,19 +162,16 @@ object Subversion : VersionControlSystem() {
 
                 private fun runSvnInfoCommand(): SubversionInfoEntry? {
                     val info = ProcessCapture("svn", "info", "--xml", workingDir.absolutePath)
-                    if (info.isError()) {
-                        return null
-                    }
-                    return svnInfoReader.readValue(info.stdout())
+                    return if (info.isSuccess) svnInfoReader.readValue(info.stdout) else null
                 }
             }
 
-    override fun isApplicableUrl(vcsUrl: String) = vcsUrl.isNotBlank() &&
-            (vcsUrl.startsWith("svn+") || ProcessCapture("svn", "list", vcsUrl).isSuccess())
+    override fun isApplicableUrlInternal(vcsUrl: String) =
+            (vcsUrl.startsWith("svn+") || ProcessCapture("svn", "list", vcsUrl).isSuccess)
 
     override fun download(pkg: Package, targetDir: File, allowMovingRevisions: Boolean,
                           recursive: Boolean): WorkingTree {
-        log.info { "Using $this version ${getVersion()}." }
+        log.info { "Using $type version ${getVersion()}." }
 
         try {
             // Create an empty working tree of the latest revision to allow sparse checkouts.
@@ -193,17 +197,20 @@ object Subversion : VersionControlSystem() {
                 val tagPath: String
                 val path: String
 
-                if (pkg.vcsProcessed.path.startsWith("tags/")) {
+                val tagsIndex = pkg.vcsProcessed.path.indexOf("tags/")
+                if (tagsIndex == 0 || (tagsIndex > 0 && pkg.vcsProcessed.path[tagsIndex - 1] == '/')) {
                     log.info {
-                        "Ignoring the $this revision '${pkg.vcsProcessed.revision}' as the path points to a tag."
+                        "Ignoring the $type revision '${pkg.vcsProcessed.revision}' as the path points to a tag."
                     }
 
-                    val pathComponents = pkg.vcsProcessed.path.split('/', limit = 3)
+                    val tagsPathIndex = pkg.vcsProcessed.path.indexOf('/', tagsIndex + "tags/".length)
 
-                    tagPath = pathComponents[0] + "/" + pathComponents.getOrElse(1) { "" }
+                    tagPath = pkg.vcsProcessed.path.let {
+                        if (tagsPathIndex < 0) it else it.substring(0, tagsPathIndex)
+                    }
                     path = pkg.vcsProcessed.path
                 } else {
-                    log.info { "Trying to guess a $this revision for version '${pkg.id.version}'." }
+                    log.info { "Trying to guess a $type revision for version '${pkg.id.version}'." }
 
                     revision = try {
                         getWorkingTree(targetDir).guessRevisionName(pkg.id.name, pkg.id.version)
@@ -212,7 +219,7 @@ object Subversion : VersionControlSystem() {
                     }
 
                     log.warn {
-                        "Using guessed $this revision '$revision' for version '${pkg.id.version}'. This might cause " +
+                        "Using guessed $type revision '$revision' for version '${pkg.id.version}'. This might cause " +
                                 "the downloaded source code to not match the package version."
                     }
 
@@ -228,9 +235,7 @@ object Subversion : VersionControlSystem() {
                 getWorkingTree(File(targetDir, tagPath))
             }
         } catch (e: IOException) {
-            e.showStackTrace()
-
-            throw DownloadException("$this failed to download from URL '${pkg.vcsProcessed.url}'.", e)
+            throw DownloadException("$type failed to download from URL '${pkg.vcsProcessed.url}'.", e)
         }
     }
 }

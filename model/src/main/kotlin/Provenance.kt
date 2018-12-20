@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,8 +58,14 @@ data class Provenance(
          */
         @JsonAlias("originalVcsInfo")
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        val originalVcsInfo: VcsInfo? = null
-) : CustomData() {
+        val originalVcsInfo: VcsInfo? = null,
+
+        /**
+         * A map that holds arbitrary data. Can be used by third-party tools to add custom data to the model.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val data: CustomData = emptyMap()
+) {
     init {
         require(sourceArtifact == null || vcsInfo == null) {
             "Provenance does not allow both 'sourceArtifact' and 'vcsInfo' to be set, otherwise it is ambiguous " +
@@ -74,10 +80,11 @@ data class Provenance(
         // TODO: Only comparing the hashes of the source artifacts might be sufficient.
         if (sourceArtifact != null) {
             // Note that pkg.sourceArtifact is non-nullable.
-            return sourceArtifact == pkg.sourceArtifact
+            return sourceArtifact.copy(data = emptyMap()) == pkg.sourceArtifact.copy(data = emptyMap())
         }
 
-        // If vcsInfo does not have a resolved revision it means that there was an issue with downloading the code.
+        // If the VCS information does not have a resolved revision it means that there was an issue with downloading
+        // the source code.
         if (vcsInfo?.resolvedRevision == null) {
             return false
         }

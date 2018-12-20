@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import com.here.ort.model.Package
 import com.here.ort.model.ScanResult
 import com.here.ort.model.ScanResultContainer
 import com.here.ort.model.ScannerDetails
+import com.here.ort.model.readValue
 import com.here.ort.model.yamlMapper
 import com.here.ort.utils.OkHttpClientHelper
 import com.here.ort.utils.log
@@ -56,10 +57,10 @@ class ArtifactoryCache(
                 .url("$url/$cachePath")
                 .build()
 
-        val tempFile = createTempFile("scan-results-")
+        val tempFile = createTempFile("scan-results-", ".yml")
 
         try {
-            OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, request).use { response ->
+            OkHttpClientHelper.execute(HTTP_CACHE_PATH, request).use { response ->
                 if (response.code() == HttpURLConnection.HTTP_OK) {
                     response.body()?.let { body ->
                         Okio.buffer(Okio.sink(tempFile)).use { it.writeAll(body.source()) }
@@ -71,7 +72,7 @@ class ArtifactoryCache(
                         log.info { "Downloaded $cachePath from Artifactory cache." }
                     }
 
-                    return yamlMapper.readValue(tempFile, ScanResultContainer::class.java)
+                    return tempFile.readValue()
                 } else {
                     log.info {
                         "Could not get $cachePath from Artifactory cache: ${response.code()} - " +
@@ -93,6 +94,7 @@ class ArtifactoryCache(
 
         if (scanResults.isEmpty()) return ScanResultContainer(pkg.id, scanResults)
 
+        // Only keep scan results whose provenance information matches the package information.
         scanResults.retainAll { it.provenance.matches(pkg) }
         if (scanResults.isEmpty()) {
             log.info {
@@ -102,6 +104,7 @@ class ArtifactoryCache(
             return ScanResultContainer(pkg.id, scanResults)
         }
 
+        // Only keep scan results from compatible scanners.
         scanResults.retainAll { scannerDetails.isCompatible(it.scanner) }
         if (scanResults.isEmpty()) {
             log.info {
@@ -143,7 +146,7 @@ class ArtifactoryCache(
             return false
         }
 
-        val scanResults = read(id).let { ScanResultContainer(id, it.results + scanResult) }
+        val scanResults = ScanResultContainer(id, read(id).results + scanResult)
 
         val tempFile = createTempFile("scan-results-")
         yamlMapper.writeValue(tempFile, scanResults)
@@ -159,7 +162,7 @@ class ArtifactoryCache(
                 .build()
 
         try {
-            return OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, request).use { response ->
+            return OkHttpClientHelper.execute(HTTP_CACHE_PATH, request).use { response ->
                 (response.code() == HttpURLConnection.HTTP_CREATED).also {
                     log.info {
                         if (it) {

@@ -1,10 +1,8 @@
 ---
-allow_dynamic_versions: false
 project:
   id: "GoDep::godep:ce0bfadeb516ab23c845a85c4b0eae421ec9614b"
   definition_file_path: "Godeps/Godeps.json"
   declared_licenses: []
-  aliases: []
   vcs:
     type: ""
     url: ""
@@ -18,23 +16,17 @@ project:
   homepage_url: ""
   scopes:
   - name: "default"
-    delivered: true
     dependencies:
     - id: "GoDep::github.com/kr/fs:2788f0dbd16903de03cb8186e5c7d97b69ad387b"
-      dependencies: []
-      errors: []
+      linkage: "STATIC"
     - id: "GoDep::github.com/kr/pretty:f31442d60e51465c69811e2107ae978868dbea5c"
-      dependencies: []
-      errors: []
+      linkage: "STATIC"
     - id: "GoDep::github.com/kr/text:6807e777504f54ad073ecef66747de158294b639"
-      dependencies: []
-      errors: []
+      linkage: "STATIC"
     - id: "GoDep::github.com/pmezard/go-difflib:f78a839676152fd9f4863704f5d516195c18fc14"
-      dependencies: []
-      errors: []
+      linkage: "STATIC"
     - id: "GoDep::golang.org/x/tools:1f1b3322f67af76803c942fd237291538ec68262"
-      dependencies: []
-      errors: []
+      linkage: "STATIC"
 packages:
 - package:
     id: "GoDep::github.com/kr/fs:2788f0dbd16903de03cb8186e5c7d97b69ad387b"
@@ -50,9 +42,9 @@ packages:
       hash: ""
       hash_algorithm: ""
     vcs:
-      type: "GoDep"
-      url: "github.com/kr/fs"
-      revision: "2788f0dbd16903de03cb8186e5c7d97b69ad387b"
+      type: ""
+      url: ""
+      revision: ""
       path: ""
     vcs_processed:
       type: "git"
@@ -74,9 +66,9 @@ packages:
       hash: ""
       hash_algorithm: ""
     vcs:
-      type: "GoDep"
-      url: "github.com/kr/pretty"
-      revision: "f31442d60e51465c69811e2107ae978868dbea5c"
+      type: ""
+      url: ""
+      revision: ""
       path: ""
     vcs_processed:
       type: "git"
@@ -98,9 +90,9 @@ packages:
       hash: ""
       hash_algorithm: ""
     vcs:
-      type: "GoDep"
-      url: "github.com/kr/text"
-      revision: "6807e777504f54ad073ecef66747de158294b639"
+      type: ""
+      url: ""
+      revision: ""
       path: ""
     vcs_processed:
       type: "git"
@@ -122,9 +114,9 @@ packages:
       hash: ""
       hash_algorithm: ""
     vcs:
-      type: "GoDep"
-      url: "github.com/pmezard/go-difflib"
-      revision: "f78a839676152fd9f4863704f5d516195c18fc14"
+      type: ""
+      url: ""
+      revision: ""
       path: ""
     vcs_processed:
       type: "git"
@@ -146,9 +138,9 @@ packages:
       hash: ""
       hash_algorithm: ""
     vcs:
-      type: "GoDep"
-      url: "golang.org/x/tools"
-      revision: "1f1b3322f67af76803c942fd237291538ec68262"
+      type: ""
+      url: ""
+      revision: ""
       path: ""
     vcs_processed:
       type: "git"
@@ -156,4 +148,3 @@ packages:
       revision: "1f1b3322f67af76803c942fd237291538ec68262"
       path: ""
   curations: []
-errors: []

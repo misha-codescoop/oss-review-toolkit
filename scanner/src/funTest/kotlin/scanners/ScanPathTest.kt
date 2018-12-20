@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 
 package com.here.ort.scanner.scanners
 
+import com.here.ort.model.config.ScannerConfiguration
 import com.here.ort.utils.safeDeleteRecursively
 import com.here.ort.utils.test.ExpensiveTag
 import com.here.ort.utils.test.ScanCodeTag
@@ -31,6 +32,7 @@ import io.kotlintest.specs.StringSpec
 import java.io.File
 
 class ScanPathTest : StringSpec() {
+    private val config = ScannerConfiguration()
     private lateinit var outputDir: File
 
     override fun beforeTest(description: Description) {
@@ -38,32 +40,32 @@ class ScanPathTest : StringSpec() {
     }
 
     override fun afterTest(description: Description, result: TestResult) {
-        outputDir.safeDeleteRecursively()
+        outputDir.safeDeleteRecursively(force = true)
     }
 
     init {
         "Askalono recognizes our own LICENSE".config(tags = setOf(ExpensiveTag)) {
-            val result = Askalono.scanPath(File("../LICENSE"), outputDir)
+            val result = Askalono(config).scanPath(File("../LICENSE"), outputDir)
             result.summary.fileCount shouldBe 1
-            result.summary.licenses shouldBe setOf("Apache-2.0")
+            result.summary.licenses shouldBe sortedSetOf("Apache-2.0")
         }
 
         "BoyterLc recognizes our own LICENSE".config(tags = setOf(ExpensiveTag)) {
-            val result = BoyterLc.scanPath(File("../LICENSE"), outputDir)
+            val result = BoyterLc(config).scanPath(File("../LICENSE"), outputDir)
             result.summary.fileCount shouldBe 1
-            result.summary.licenses shouldBe setOf("Apache-2.0", "ECL-2.0")
+            result.summary.licenses shouldBe sortedSetOf("Apache-2.0", "ECL-2.0")
         }
 
         "Licensee recognizes our own LICENSE".config(tags = setOf(ExpensiveTag)) {
-            val result = Licensee.scanPath(File("../LICENSE"), outputDir)
+            val result = Licensee(config).scanPath(File("../LICENSE"), outputDir)
             result.summary.fileCount shouldBe 1
-            result.summary.licenses shouldBe setOf("Apache-2.0")
+            result.summary.licenses shouldBe sortedSetOf("Apache-2.0")
         }
 
         "ScanCode recognizes our own LICENSE".config(tags = setOf(ExpensiveTag, ScanCodeTag)) {
-            val result = ScanCode.scanPath(File("../LICENSE"), outputDir)
+            val result = ScanCode(config).scanPath(File("../LICENSE"), outputDir)
             result.summary.fileCount shouldBe 1
-            result.summary.licenses shouldBe setOf("Apache-2.0")
+            result.summary.licenses shouldBe sortedSetOf("Apache-2.0")
         }
     }
 }

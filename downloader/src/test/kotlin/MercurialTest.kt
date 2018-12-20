@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import io.kotlintest.specs.StringSpec
 import java.io.File
 
 class MercurialTest : StringSpec() {
+    private val hg = Mercurial()
     private lateinit var zipContentDir: File
 
     override fun beforeSpec(description: Description, spec: Spec) {
@@ -45,31 +46,31 @@ class MercurialTest : StringSpec() {
     }
 
     override fun afterSpec(description: Description, spec: Spec) {
-        zipContentDir.safeDeleteRecursively()
+        zipContentDir.safeDeleteRecursively(force = true)
     }
 
     init {
-        "Detected Mercurial version is not empty".config(enabled = Mercurial.isInPath()) {
-            val version = Mercurial.getVersion()
+        "Detected Mercurial version is not empty".config(enabled = hg.isInPath()) {
+            val version = hg.getVersion()
             println("Mercurial version $version detected.")
             version shouldNotBe ""
         }
 
-        "Mercurial detects non-working-trees".config(enabled = Mercurial.isInPath()) {
-            Mercurial.getWorkingTree(getUserConfigDirectory()).isValid() shouldBe false
+        "Mercurial detects non-working-trees".config(enabled = hg.isInPath()) {
+            hg.getWorkingTree(getUserConfigDirectory()).isValid() shouldBe false
         }
 
-        "Mercurial correctly detects URLs to remote repositories".config(enabled = Mercurial.isInPath()) {
-            Mercurial.isApplicableUrl("https://bitbucket.org/paniq/masagin") shouldBe true
+        "Mercurial correctly detects URLs to remote repositories".config(enabled = hg.isInPath()) {
+            hg.isApplicableUrl("https://bitbucket.org/paniq/masagin") shouldBe true
 
             // Bitbucket forwards to ".git" URLs for Git repositories, so we can omit the suffix.
-            Mercurial.isApplicableUrl("https://bitbucket.org/yevster/spdxtraxample") shouldBe false
+            hg.isApplicableUrl("https://bitbucket.org/yevster/spdxtraxample") shouldBe false
         }
 
-        "Detected Mercurial working tree information is correct".config(enabled = Mercurial.isInPath()) {
-            val workingTree = Mercurial.getWorkingTree(zipContentDir)
+        "Detected Mercurial working tree information is correct".config(enabled = hg.isInPath()) {
+            val workingTree = hg.getWorkingTree(zipContentDir)
 
-            workingTree.getType() shouldBe "Mercurial"
+            workingTree.vcsType shouldBe "Mercurial"
             workingTree.isValid() shouldBe true
             workingTree.getRemoteUrl() shouldBe "https://bitbucket.org/facebook/lz4revlog"
             workingTree.getRevision() shouldBe "422ca71c35132f1f55d20a13355708aec7669b50"
@@ -77,23 +78,23 @@ class MercurialTest : StringSpec() {
             workingTree.getPathToRoot(File(zipContentDir, "tests")) shouldBe "tests"
         }
 
-        "Mercurial correctly lists remote branches".config(enabled = Mercurial.isInPath()) {
+        "Mercurial correctly lists remote branches".config(enabled = hg.isInPath()) {
             val expectedBranches = listOf(
                     "default"
             )
 
-            val workingTree = Mercurial.getWorkingTree(zipContentDir)
+            val workingTree = hg.getWorkingTree(zipContentDir)
             workingTree.listRemoteBranches().joinToString("\n") shouldBe expectedBranches.joinToString("\n")
         }
 
-        "Mercurial correctly lists remote tags".config(enabled = Mercurial.isInPath()) {
+        "Mercurial correctly lists remote tags".config(enabled = hg.isInPath()) {
             val expectedTags = listOf(
                     "1.0",
                     "1.0.1",
                     "1.0.2"
             )
 
-            val workingTree = Mercurial.getWorkingTree(zipContentDir)
+            val workingTree = hg.getWorkingTree(zipContentDir)
             workingTree.listRemoteTags().joinToString("\n") shouldBe expectedTags.joinToString("\n")
         }
     }

@@ -1,10 +1,8 @@
 ---
-allow_dynamic_versions: true
 project:
   id: "Gradle:com.here.ort.gradle.example:app:1.0.0"
   definition_file_path: "analyzer/src/funTest/assets/projects/synthetic/gradle-android/app/build.gradle"
   declared_licenses: []
-  aliases: []
   vcs:
     type: ""
     url: ""
@@ -18,745 +16,402 @@ project:
   homepage_url: ""
   scopes:
   - name: "amazonDemoDebugAndroidTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonDemoDebugAndroidTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoDebugAndroidTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoDebugAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonDemoDebugCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoDebugRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoDebugUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonDemoDebugUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoDebugUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoDebugWearBundling"
-    delivered: true
     dependencies: []
   - name: "amazonDemoReleaseAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonDemoReleaseCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoReleaseRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoReleaseUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonDemoReleaseUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoReleaseUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonDemoReleaseWearBundling"
-    delivered: true
     dependencies: []
   - name: "amazonFullDebugAndroidTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonFullDebugAndroidTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullDebugAndroidTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullDebugAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonFullDebugCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullDebugRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullDebugUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonFullDebugUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullDebugUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullDebugWearBundling"
-    delivered: true
     dependencies: []
   - name: "amazonFullReleaseAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonFullReleaseCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullReleaseRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullReleaseUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "amazonFullReleaseUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullReleaseUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:com.squareup.okhttp3:okhttp:3.10.0"
       dependencies:
       - id: "Maven:com.squareup.okio:okio:1.14.0"
-        dependencies: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "amazonFullReleaseWearBundling"
-    delivered: true
     dependencies: []
   - name: "androidTestUtil"
-    delivered: true
     dependencies: []
   - name: "archives"
-    delivered: true
     dependencies: []
   - name: "compile"
-    delivered: true
     dependencies: []
   - name: "default"
-    delivered: true
     dependencies: []
   - name: "googleDemoDebugAndroidTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleDemoDebugAndroidTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
   - name: "googleDemoDebugAndroidTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
   - name: "googleDemoDebugAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleDemoDebugCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
   - name: "googleDemoDebugRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
   - name: "googleDemoDebugUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleDemoDebugUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleDemoDebugUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleDemoDebugWearBundling"
-    delivered: true
     dependencies: []
   - name: "googleDemoReleaseAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleDemoReleaseCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
   - name: "googleDemoReleaseRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
   - name: "googleDemoReleaseUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleDemoReleaseUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleDemoReleaseUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.2"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleDemoReleaseWearBundling"
-    delivered: true
     dependencies: []
   - name: "googleFullDebugAndroidTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleFullDebugAndroidTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
   - name: "googleFullDebugAndroidTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
   - name: "googleFullDebugAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleFullDebugCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
   - name: "googleFullDebugRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
   - name: "googleFullDebugUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleFullDebugUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleFullDebugUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleFullDebugWearBundling"
-    delivered: true
     dependencies: []
   - name: "googleFullReleaseAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleFullReleaseCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
   - name: "googleFullReleaseRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
   - name: "googleFullReleaseUnitTestAnnotationProcessorClasspath"
-    delivered: true
     dependencies: []
   - name: "googleFullReleaseUnitTestCompileClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
-      dependencies: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleFullReleaseUnitTestRuntimeClasspath"
-    delivered: true
     dependencies:
     - id: "Maven:com.here.ort.gradle.example:lib:1.0.0"
       dependencies:
       - id: "Maven:org.apache.commons:commons-compress:1.17"
-        dependencies: []
-        errors: []
       - id: "Maven:org.apache.commons:commons-text:1.3"
         dependencies:
         - id: "Maven:org.apache.commons:commons-lang3:3.7"
-          dependencies: []
-          errors: []
-        errors: []
-      errors: []
     - id: "Maven:junit:junit:4.12"
       dependencies:
       - id: "Maven:org.hamcrest:hamcrest-core:1.3"
-        dependencies: []
-        errors: []
-      errors: []
   - name: "googleFullReleaseWearBundling"
-    delivered: true
     dependencies: []
   - name: "lintChecks"
-    delivered: true
     dependencies: []
   - name: "lintClassPath"
-    delivered: true
     dependencies: []
   - name: "testCompile"
-    delivered: true
     dependencies: []
 packages:
 - package:
@@ -993,4 +648,3 @@ packages:
       revision: ""
       path: ""
   curations: []
-errors: []

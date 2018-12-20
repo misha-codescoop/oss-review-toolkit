@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,40 +22,48 @@ package com.here.ort.downloader.vcs
 import ch.frankel.slf4k.*
 
 import com.here.ort.downloader.DownloadException
+import com.here.ort.downloader.WorkingTree
 import com.here.ort.model.Package
+import com.here.ort.spdx.LICENSE_FILE_NAMES
 import com.here.ort.utils.OS
 import com.here.ort.utils.log
 import com.here.ort.utils.ProcessCapture
 import com.here.ort.utils.safeMkdirs
 import com.here.ort.utils.showStackTrace
-import com.here.ort.utils.spdx.LICENSE_FILE_NAMES
+
+import com.vdurmont.semver4j.Semver
 
 import java.io.File
 import java.io.IOException
 
-object Git : GitBase() {
-    // TODO: Make this configurable.
-    private const val HISTORY_DEPTH = 50
+// TODO: Make this configurable.
+const val GIT_HISTORY_DEPTH = 50
 
+class Git : GitBase() {
     override val aliases = listOf("git")
 
-    override fun isApplicableUrl(vcsUrl: String) = vcsUrl.isNotBlank() &&
-            ProcessCapture("git", "ls-remote", vcsUrl).isSuccess()
+    override fun isApplicableUrlInternal(vcsUrl: String) =
+            ProcessCapture("git", "ls-remote", vcsUrl).isSuccess
 
     override fun download(pkg: Package, targetDir: File, allowMovingRevisions: Boolean,
                           recursive: Boolean): WorkingTree {
-        log.info { "Using $this version ${getVersion()}." }
+        log.info { "Using $type version ${getVersion()}." }
 
         try {
             return createWorkingTree(pkg, targetDir, allowMovingRevisions).also {
                 if (recursive && File(targetDir, ".gitmodules").isFile) {
                     run(targetDir, "submodule", "update", "--init", "--recursive")
                 }
+
+                pkg.vcsProcessed.path.let {
+                    if (it.isNotEmpty() && !targetDir.resolve(it).isDirectory) {
+                        throw DownloadException("The $type working directory at '$targetDir' does not contain the " +
+                                "requested path '$it'.")
+                    }
+                }
             }
         } catch (e: IOException) {
-            e.showStackTrace()
-
-            throw DownloadException("$this failed to download from URL '${pkg.vcsProcessed.url}'.", e)
+            throw DownloadException("$type failed to download from URL '${pkg.vcsProcessed.url}'.", e)
         }
     }
 
@@ -63,6 +71,12 @@ object Git : GitBase() {
         // Do not use "git clone" to have more control over what is being fetched.
         run(targetDir, "init")
         run(targetDir, "remote", "add", "origin", pkg.vcsProcessed.url)
+
+        // Enable the more efficient Git Wire Protocol version 2, if possible. See
+        // https://github.com/git/git/blob/master/Documentation/technical/protocol-v2.txt
+        if (Semver(getVersion()).isGreaterThanOrEqualTo("2.18.0")) {
+            run(targetDir, "config", "protocol.version", "2")
+        }
 
         if (OS.isWindows) {
             run(targetDir, "config", "core.longpaths", "true")
@@ -89,14 +103,16 @@ object Git : GitBase() {
             }
         }
 
-        log.info { "Trying to guess a $this revision for version '${pkg.id.version}' to fall back to." }
+        log.info { "Trying to guess a $type revision for version '${pkg.id.version}' to fall back to." }
         try {
             workingTree.guessRevisionName(pkg.id.name, pkg.id.version).also { revision ->
                 revisionCandidates += revision
-                log.info { "Found $this revision '$revision' for version '${pkg.id.version}'." }
+                log.info { "Found $type revision '$revision' for version '${pkg.id.version}'." }
             }
         } catch (e: IOException) {
-            log.info { "No $this revision for version '${pkg.id.version}' found: ${e.message}" }
+            e.showStackTrace()
+
+            log.info { "No $type revision for version '${pkg.id.version}' found: ${e.message}" }
         }
 
         val revision = revisionCandidates.firstOrNull()
@@ -110,8 +126,8 @@ object Git : GitBase() {
         // refs.
         if (!pkg.vcsProcessed.url.startsWith("ssh://git@github.com/")) {
             try {
-                log.info { "Trying to fetch only revision '$revision' with depth limited to $HISTORY_DEPTH." }
-                run(targetDir, "fetch", "--depth", HISTORY_DEPTH.toString(), "origin", revision)
+                log.info { "Trying to fetch only revision '$revision' with depth limited to $GIT_HISTORY_DEPTH." }
+                run(targetDir, "fetch", "--depth", GIT_HISTORY_DEPTH.toString(), "origin", revision)
 
                 // The documentation for git-fetch states that "By default, any tag that points into the histories being
                 // fetched is also fetched", but that is not true for shallow fetches of a tag; then the tag itself is
@@ -134,15 +150,15 @@ object Git : GitBase() {
 
         // Fall back to fetching all refs with limited depth of history.
         try {
-            log.info { "Trying to fetch all refs with depth limited to $HISTORY_DEPTH." }
-            run(targetDir, "fetch", "--depth", HISTORY_DEPTH.toString(), "--tags", "origin")
+            log.info { "Trying to fetch all refs with depth limited to $GIT_HISTORY_DEPTH." }
+            run(targetDir, "fetch", "--depth", GIT_HISTORY_DEPTH.toString(), "--tags", "origin")
             run(targetDir, "checkout", revision)
             return workingTree
         } catch (e: IOException) {
             e.showStackTrace()
 
             log.warn {
-                "Could not fetch with only a depth of $HISTORY_DEPTH: ${e.message}\n" +
+                "Could not fetch with only a depth of $GIT_HISTORY_DEPTH: ${e.message}\n" +
                         "Falling back to fetching everything."
             }
         }

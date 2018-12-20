@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 
 package com.here.ort.analyzer.integration
 
-import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.analyzer.managers.NPM
 import com.here.ort.analyzer.managers.PhpComposer
@@ -34,7 +33,7 @@ import java.io.File
 class DrupalIntegrationTest : AbstractIntegrationSpec() {
     override val pkg: Package = Package(
             id = Identifier(
-                    provider = "PhpComposer",
+                    type = "PhpComposer",
                     namespace = "",
                     name = "Drupal",
                     version = ""
@@ -52,11 +51,11 @@ class DrupalIntegrationTest : AbstractIntegrationSpec() {
             )
     )
 
-    override val expectedDefinitionFiles by lazy {
+    override val expectedManagedFiles by lazy {
         val downloadDir = downloadResult.downloadDirectory
 
         mapOf(
-                PhpComposer to listOf(
+                PhpComposer.Factory() as PackageManagerFactory to listOf(
                         File(downloadDir, "core/modules/system/tests/fixtures/HtaccessTest/composer.json"),
                         File(downloadDir, "core/lib/Drupal/Component/Uuid/composer.json"),
                         File(downloadDir, "core/lib/Drupal/Component/Utility/composer.json"),
@@ -83,18 +82,19 @@ class DrupalIntegrationTest : AbstractIntegrationSpec() {
                         File(downloadDir, "core/composer.json"),
                         File(downloadDir, "composer.json")
                 ),
-                NPM to listOf(
+                NPM.Factory() as PackageManagerFactory to listOf(
                         File(downloadDir, "core/package.json"),
                         File(downloadDir, "core/assets/vendor/jquery.ui/package.json")
                 ),
-                Yarn to listOf(
-                        File(downloadDir, "core/yarn.lock")
+                Yarn.Factory() as PackageManagerFactory to listOf(
+                        File(downloadDir, "core/package.json"),
+                        File(downloadDir, "core/assets/vendor/jquery.ui/package.json")
                 )
         )
     }
 
-    override val definitionFilesForTest by lazy {
-        mapOf(PhpComposer as PackageManagerFactory<PackageManager> to
+    override val managedFilesForTest by lazy {
+        mapOf(PhpComposer.Factory() as PackageManagerFactory to
                 // Limit to definition files that come long with a lock file.
                 listOf(File(downloadResult.downloadDirectory, "composer.json")))
     }

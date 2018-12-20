@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,20 +20,26 @@
 package com.here.ort.analyzer.managers
 
 import com.here.ort.analyzer.PackageManager
-import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.AbstractPackageManagerFactory
+import com.here.ort.model.ProjectAnalyzerResult
+import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.RepositoryConfiguration
 
 import java.io.File
 
-class CocoaPods : PackageManager() {
-    companion object : PackageManagerFactory<CocoaPods>(
-            "https://cocoapods.org/",
-            "Objective-C",
-            listOf("Podfile.lock", "Podfile")
-    ) {
-        override fun create() = CocoaPods()
+/**
+ * The CocoaPods package manager for Objective-C, see https://cocoapods.org/.
+ */
+class CocoaPods(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) :
+        PackageManager(analyzerConfig, repoConfig) {
+    class Factory : AbstractPackageManagerFactory<CocoaPods>() {
+        override val globsForDefinitionFiles = listOf("Podfile.lock", "Podfile")
+
+        override fun create(analyzerConfig: AnalyzerConfiguration, repoConfig: RepositoryConfiguration) =
+                CocoaPods(analyzerConfig, repoConfig)
     }
 
-    override fun command(workingDir: File) = "pod"
-
-    override fun toString() = CocoaPods.toString()
+    override fun resolveDependencies(definitionFile: File): ProjectAnalyzerResult? {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
 }

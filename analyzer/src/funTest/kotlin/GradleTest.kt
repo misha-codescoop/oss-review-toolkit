@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 HERE Europe B.V.
+ * Copyright (C) 2017-2018 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,15 @@ import com.here.ort.analyzer.managers.Gradle
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.downloader.vcs.Git
 import com.here.ort.model.yamlMapper
+import com.here.ort.utils.OS
 import com.here.ort.utils.ProcessCapture
 import com.here.ort.utils.normalizeVcsUrl
+import com.here.ort.utils.test.DEFAULT_ANALYZER_CONFIGURATION
+import com.here.ort.utils.test.DEFAULT_REPOSITORY_CONFIGURATION
 import com.here.ort.utils.test.ExpensiveTag
-import com.here.ort.utils.test.USER_DIR
+import com.here.ort.utils.test.patchActualResult
 import com.here.ort.utils.test.patchExpectedResult
+import com.here.ort.utils.test.USER_DIR
 
 import io.kotlintest.Description
 import io.kotlintest.Spec
@@ -51,7 +55,7 @@ class GradleTest : StringSpec() {
 
     override fun afterSpec(description: Description, spec: Spec) {
         // Reset the Gradle version in the test project to clean up after the tests.
-        Git.run(projectDir, "checkout", ".")
+        Git().run(projectDir, "checkout", ".")
     }
 
     init {
@@ -63,7 +67,8 @@ class GradleTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()
@@ -78,7 +83,8 @@ class GradleTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()
@@ -93,7 +99,8 @@ class GradleTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()
@@ -108,11 +115,12 @@ class GradleTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             result!!.errors shouldBe emptyList()
-            yamlMapper.writeValueAsString(result) shouldBe expectedResult
+            patchActualResult(yamlMapper.writeValueAsString(result)) shouldBe expectedResult
         }
 
         "Fails nicely for Gradle version < 2.14".config(enabled = false) {
@@ -123,7 +131,8 @@ class GradleTest : StringSpec() {
                     revision = vcsRevision
             )
 
-            val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+            val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                    .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
             result shouldNotBe null
             yamlMapper.writeValueAsString(result) shouldBe expectedResult
@@ -170,7 +179,7 @@ class GradleTest : StringSpec() {
             val gradleVersionTable = table(headers("version", "resultsFileSuffix"), *gradleVersions)
 
             forAll(gradleVersionTable) { version, resultsFileSuffix ->
-                gradleWrapper(version)
+                installGradleWrapper(version)
 
                 val packageFile = File(projectDir, "app/build.gradle")
                 val expectedResult = patchExpectedResult(
@@ -179,7 +188,8 @@ class GradleTest : StringSpec() {
                         revision = vcsRevision
                 )
 
-                val result = Gradle.create().resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
+                val result = Gradle(DEFAULT_ANALYZER_CONFIGURATION, DEFAULT_REPOSITORY_CONFIGURATION)
+                        .resolveDependencies(USER_DIR, listOf(packageFile))[packageFile]
 
                 result shouldNotBe null
                 result!!.errors shouldBe emptyList()
@@ -188,14 +198,20 @@ class GradleTest : StringSpec() {
         }
     }
 
-    private fun gradleWrapper(version: String) {
+    private fun installGradleWrapper(version: String) {
         println("Installing Gradle wrapper version $version.")
+
+        val (gradle, wrapper) = if (OS.isWindows) {
+            Pair("gradle.bat", "gradlew.bat")
+        } else {
+            Pair("gradle", "gradlew")
+        }
+
+        val command = if (projectDir.resolve(wrapper).isFile) wrapper else gradle
 
         // When calling Windows batch files directly (without passing them to "cmd" as an argument), Windows requires
         // the absolute path to the batch file to be passed to the underlying ProcessBuilder for some reason.
-        val wrapperAbsolutePath = File(projectDir, Gradle.wrapper).absolutePath
-
-        ProcessCapture(projectDir, wrapperAbsolutePath, "wrapper", "--gradle-version", version, "--no-daemon")
+        ProcessCapture(projectDir, File(command).absolutePath, "--no-daemon", "wrapper", "--gradle-version", version)
                 .requireSuccess()
     }
 }
