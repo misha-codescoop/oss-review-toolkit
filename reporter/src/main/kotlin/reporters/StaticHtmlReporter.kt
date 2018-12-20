@@ -545,8 +545,7 @@ class StaticHtmlReporter : Reporter() {
                 tr {
                     th { +"Package" }
                     th { +"Scopes" }
-                    th { +"Declared Licenses" }
-                    th { +"Detected Licenses" }
+                    th { +"Licenses" }
                     th { +"Analyzer Errors" }
                     th { +"Scanner Errors" }
                 }
@@ -590,9 +589,24 @@ class StaticHtmlReporter : Reporter() {
                 }
             }
 
-            td { ul { row.declaredLicenses.forEach { li { +it } } } }
+            td {
+                dl {
+                    row.concludedLicense?.let {
+                        dt { em { +"Concluded License:"}}
+                        dd { +"${row.concludedLicense}"}
+                    }
 
-            td { ul { row.detectedLicenses.forEach { li { +it } } } }
+                    if (row.declaredLicenses.isNotEmpty()) {
+                        dt { em { +"Declared Licenses:" } }
+                        dd { +row.declaredLicenses.joinToString { if (it.contains(",")) "\"$it\"" else it } }
+                    }
+
+                    if (row.detectedLicenses.isNotEmpty()) {
+                        dt { em { +"Declared Licenses:" } }
+                        dd { +row.detectedLicenses.joinToString { if (it.contains(",")) "\"$it\"" else it } }
+                    }
+                }
+            }
 
             td { errorList(row.analyzerErrors) }
 
